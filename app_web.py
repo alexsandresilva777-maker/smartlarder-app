@@ -1,65 +1,20 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
 
-# CONFIGURAÇÃO DE MARCA E LAYOUT
-st.set_page_config(page_title="SmartLarder - Inteligência Doméstica", layout="wide", page_icon="🧼")
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="SmartLarder - Nuvem", layout="wide", page_icon="📈")
 
-# ESTILO CUSTOMIZADO (Para dar um ar profissional)
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        background-color: #007bff;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- CONEXÃO COM GOOGLE SHEETS ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# CABEÇALHO
-st.title("🧼 SmartLarder")
-st.caption("Advanced Household Inventory & Expiration Management")
-import streamlit as st
-import pandas as pd
-import sqlite3
-from datetime import datetime
-
-# --- CONFIGURAÇÃO DO BANCO DE DADOS (GRATUITO) ---
-def criar_banco():
-    conn = sqlite3.connect('smartlarder.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS estoque 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                  produto TEXT, categoria TEXT, validade DATE, quantidade INTEGER)''')
-    conn.commit()
-    conn.close()
-
-def salvar_item(nome, cat, data, qtd):
-    conn = sqlite3.connect('smartlarder.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO estoque (produto, categoria, validade, quantidade) VALUES (?, ?, ?, ?)",
-              (nome, cat, data, qtd))
-    conn.commit()
-    conn.close()
-
+# Função para ler os dados da planilha
 def carregar_dados():
-    conn = sqlite3.connect('smartlarder.db')
-    df = pd.read_sql_query("SELECT produto as Produto, categoria as Categoria, validade as Vencimento, quantidade as Qtd FROM estoque", conn)
-    conn.close()
-    return df
-
-# --- INICIALIZAÇÃO ---
-criar_banco()
-st.set_page_config(page_title="SmartLarder - Gestão Inteligente", layout="wide", page_icon="📈")
+    return conn.read(ttl="0s") # ttl=0 garante que ele pegue os dados mais frescos
 
 # --- INTERFACE ---
 st.title("🧼 SmartLarder")
-st.caption("Gestão Avançada de Estoque e Validades")
+st.caption("Conectado à Base de Dados em Tempo Real (Google Sheets)")
 
 # MENU LATERAL
 st.sidebar.title("Navegação")
@@ -67,19 +22,13 @@ menu = st.sidebar.radio("Ir para:", ["Painel Geral", "Cadastrar Produtos", "Conf
 
 if menu == "Painel Geral":
     st.header("📊 Visão Geral da Dispensa")
-    dados = carregar_dados()
+    df = carregar_dados()
     
-    if not dados.empty:
-        # Métricas Simples
-        m1, m2 = st.columns(2)
-        m1.metric("Itens no Estoque", len(dados))
-        m2.metric("Economia Mensal Estimada", "R$ 85,50") # Exemplo fixo por enquanto
-        
-        st.divider()
+    if df is not None and not df.empty:
         st.subheader("📦 Itens Cadastrados")
-        st.dataframe(dados, use_container_width=True)
+        st.dataframe(df, use_container_width=True)
     else:
-        st.info("Sua dispensa está vazia. Comece cadastrando um item!")
+        st.info("Sua dispensa na nuvem está vazia. Comece cadastrando um item!")
 
 elif menu == "Cadastrar Produtos":
     st.header("📝 Adicionar à Dispensa")
@@ -92,18 +41,22 @@ elif menu == "Cadastrar Produtos":
             data = st.date_input("Data de Vencimento")
             qtd = st.number_input("Quantidade", min_value=1)
         
-        botao = st.form_submit_button("Registrar Item no Banco de Dados")
+        botao = st.form_submit_button("Registrar Item na Nuvem")
         
         if botao:
             if nome:
-                salvar_item(nome, cat, data, qtd)
-                st.success(f"**{nome}** salvo com sucesso no SmartLarder!")
+                # Carrega dados atuais
+                df_atual = carregar_dados()
+                # Cria o novo item
+                novo_item = pd.DataFrame([{"Produto": nome, "Categoria": cat, "Vencimento": str(data), "Quantidade": qtd}])
+                # Junta e salva
+                df_final = pd.concat([df_atual, novo_item], ignore_index=True)
+                conn.update(data=df_final)
+                st.success(f"**{nome}** salvo com sucesso na sua Planilha Google!")
+                st.balloons() # Celebração!
             else:
                 st.error("Por favor, digite o nome do produto.")
 
 elif menu == "Configurar Alertas":
     st.header("🤖 Configurações do Robô")
-    st.write("Em breve: Integração automática com o Telegram do cliente.")
-    st.text_input("Token do Bot (Seu Código Secreto)")
-    st.text_input("Seu ID do Telegram")
-    st.button("Salvar Configurações")
+    st.write("Em breve: Integração automática com o Telegram.")
