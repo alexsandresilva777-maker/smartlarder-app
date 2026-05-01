@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime, date
-from utils.database import (listar_produtos, excluir_produto,
+from utilitarios.database import (listar_produtos, excluir_produto,
                              atualizar_produto, registrar_movimentacao)
 
 CATEGORIAS = ["Alimentos","Bebidas","Limpeza","Higiene","Medicamentos","Outros"]
