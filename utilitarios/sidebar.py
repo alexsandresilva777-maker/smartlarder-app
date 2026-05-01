@@ -1,6 +1,6 @@
 import streamlit as st
 from utilitarios.auth import logout
-from utils.database import listar_produtos
+from utilitarios.database import listar_produtos
 
 _PAGES = [
     ("🏠", "Dashboard"),
