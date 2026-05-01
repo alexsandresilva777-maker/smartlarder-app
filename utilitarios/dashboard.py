@@ -3,7 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from datetime import date
-from utils.database import get_stats, listar_produtos, get_movimentacoes_chart
+from utilitarios.database import get_stats, listar_produtos, get_movimentacoes_chart
 
 # ── helpers ──────────────────────────────────────────────────
 def _fmt_brl(valor: float) -> str:
