@@ -2,13 +2,7 @@ import streamlit as st
 from utils.database import verificar_login
 
 def show_login():
-    # Sem nenhum CSS que toque na sidebar — deixa o set_page_config controlar
-    st.markdown("""
-    <style>
-      .main .block-container { max-width:460px !important; padding-top:60px !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
+    # Zero CSS — nenhuma regra que toque no layout ou sidebar
     st.markdown(
         """<div style='text-align:center;margin-bottom:32px;'>
           <div style='display:inline-flex;align-items:center;justify-content:center;
@@ -26,28 +20,32 @@ def show_login():
         unsafe_allow_html=True,
     )
 
-    username = st.text_input("Usuário", placeholder="seu.usuario", key="li_user")
-    senha    = st.text_input("Senha", type="password", placeholder="••••••••", key="li_pass")
-    st.markdown("")
+    # Centraliza apenas o conteúdo usando colunas nativas — sem CSS de layout
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        username = st.text_input("Usuário", placeholder="seu.usuario", key="li_user")
+        senha    = st.text_input("Senha", type="password",
+                                 placeholder="••••••••", key="li_pass")
+        st.markdown("")
 
-    if st.button("Entrar →", use_container_width=True, type="primary"):
-        if not username or not senha:
-            st.warning("Preencha usuário e senha.")
-            return
-        user = verificar_login(username.strip(), senha)
-        if user:
-            st.session_state.logged_in     = True
-            st.session_state.username      = user["username"]
-            st.session_state.nome_completo = user["nome"]
-            st.session_state.role          = user["role"]
-            st.rerun()
-        else:
-            st.error("Credenciais inválidas ou conta inativa.")
+        if st.button("Entrar →", use_container_width=True, type="primary"):
+            if not username or not senha:
+                st.warning("Preencha usuário e senha.")
+                return
+            user = verificar_login(username.strip(), senha)
+            if user:
+                st.session_state.logged_in     = True
+                st.session_state.username      = user["username"]
+                st.session_state.nome_completo = user["nome"]
+                st.session_state.role          = user["role"]
+                st.rerun()
+            else:
+                st.error("Credenciais inválidas ou conta inativa.")
 
-    st.markdown(
-        "<div style='text-align:center;margin-top:20px;color:#9ab;font-size:0.82rem;'>"
-        "Acesso inicial: <code>admin</code> / <code>admin123</code><br>"
-        "<span style='color:#e67e22;'>⚠️ Troque a senha após o primeiro acesso.</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            "<div style='text-align:center;margin-top:16px;color:#9ab;font-size:0.82rem;'>"
+            "Acesso inicial: <code>admin</code> / <code>admin123</code><br>"
+            "<span style='color:#e67e22;'>⚠️ Troque a senha após o primeiro acesso.</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )

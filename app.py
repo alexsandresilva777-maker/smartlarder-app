@@ -1,20 +1,19 @@
 """
-SmartLarder Pro v3.2
-Compatível com pasta 'utils' e 'utilitarios' (deploy em nuvem).
+SmartLarder Pro v3.4
+set_page_config SEMPRE com expanded — sidebar nunca some.
 """
-import sys, os
-# ── Compatibilidade de pasta utils/utilitarios (DEVE ser primeiro) ────────────
-import _compat  # noqa: F401  — resolve imports independente do nome da pasta
+import os
+import _compat  # noqa
 
 import streamlit as st
 from utils.database import init_db
 
-# ── Configuração da página ─────────────────────────────────────────────────────
+# ── set_page_config: SEMPRE expanded, sem condicionais ────────────────────────
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded",   # fixo — nunca muda
     menu_items={},
 )
 
@@ -24,10 +23,10 @@ if os.path.exists(_CSS):
     with open(_CSS) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# ── Banco de dados ─────────────────────────────────────────────────────────────
+# ── Banco ──────────────────────────────────────────────────────────────────────
 init_db()
 
-# ── Estado de sessão padrão ────────────────────────────────────────────────────
+# ── Estado padrão ──────────────────────────────────────────────────────────────
 for k, v in {"logged_in":False,"username":"","nome_completo":"","role":""}.items():
     if k not in st.session_state:
         st.session_state[k] = v
