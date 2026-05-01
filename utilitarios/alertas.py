@@ -1,6 +1,6 @@
 import streamlit as st
-from utils.database import listar_produtos, get_config_alertas, salvar_config_alertas
-from utils.email_alert import enviar_alerta_email
+from utilitarios.database import listar_produtos, get_config_alertas, salvar_config_alertas
+from utilitarios.email_alert import enviar_alerta_email
 
 def show_alertas():
     st.markdown("## 🔔 Central de Alertas")
