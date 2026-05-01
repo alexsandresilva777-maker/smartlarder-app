@@ -10,8 +10,8 @@ import os
 from datetime import date, datetime, timedelta
 
 # ── Caminho do banco ──────────────────────────────────────────────────────────
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH   = os.path.join(_BASE_DIR, "data", "smartlarder.db")
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(_BASE_DIR, "smartlarder.db")
 
 # ── Conexão (trocar aqui para migrar para PostgreSQL) ─────────────────────────
 def get_conn() -> sqlite3.Connection:
