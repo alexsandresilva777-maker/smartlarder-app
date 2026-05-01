@@ -18,7 +18,6 @@ footer                          { visibility: hidden !important; }
 header                          { visibility: hidden !important; }
 .stDeployButton                 { display: none !important; }
 /* Remove ícone de hamburguer e "Made with Streamlit" */
-[data-testid="collapsedControl"]{ display: none !important; }
 
 /* ── Sidebar ──────────────────────────────────── */
 section[data-testid="stSidebar"] {

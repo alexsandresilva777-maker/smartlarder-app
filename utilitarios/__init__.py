@@ -1,1 +1,1 @@
-# utils package
+# Pacote utilitarios — alias compatível com utils
