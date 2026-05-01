@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import date
-from utils.database import inserir_produto, buscar_por_barcode
+from utilitarios.database import inserir_produto, buscar_por_barcode
 from utils.barcode_lookup import buscar_por_ean
 
 CATEGORIAS = ["Alimentos","Bebidas","Limpeza","Higiene","Medicamentos","Outros"]
