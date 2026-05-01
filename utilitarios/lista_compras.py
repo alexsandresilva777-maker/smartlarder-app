@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-from utils.database import gerar_lista_compras
+from utilitarios.database import gerar_lista_compras
 
 def _fmt_brl(valor: float) -> str:
     return f"R$ {valor:,.2f}".replace(",","X").replace(".",",").replace("X",".")
