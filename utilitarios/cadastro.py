@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import date
 from utilitarios.database import inserir_produto, buscar_por_barcode
-from utils.barcode_lookup import buscar_por_ean
+from utilitarios.barcode_lookup import buscar_por_ean
 
 CATEGORIAS = ["Alimentos","Bebidas","Limpeza","Higiene","Medicamentos","Outros"]
 UNIDADES   = ["un","kg","g","L","ml","cx","fardo","pct","dz"]
