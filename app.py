@@ -1,21 +1,22 @@
 """
 SmartLarder Pro v3.0
-Ponto de entrada principal.
+Ponto de entrada principal - Estrutura Consolidada.
 """
 import streamlit as st
 import os
-from utils.database import init_db
+# Ajuste na importação do banco de dados (agora dentro de utilitarios)
+from utilitarios.database import init_db 
 
 # ── Configuração da página ────────────────────────────────────────────────────
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={}   # remove menu hambúrguer
+    initial_sidebar_state="expanded"
 )
 
 # ── CSS Global ────────────────────────────────────────────────────────────────
+# O CSS continua na pasta assets, que você deve manter na raiz
 _CSS = os.path.join(os.path.dirname(__file__), "assets", "style.css")
 if os.path.exists(_CSS):
     with open(_CSS, encoding="utf-8") as f:
@@ -30,48 +31,47 @@ for k, v in _defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ── Roteamento ────────────────────────────────────────────────────────────────
+# ── Roteamento (Ajustado para a pasta utilitarios) ───────────────────────────
 if not st.session_state.logged_in:
-    from pages.login import show_login
+    from utilitarios.login import show_login
     show_login()
     st.stop()
 
-# Usuário autenticado — carrega sidebar e páginas
-from pages.sidebar import show_sidebar
+# Usuário autenticado — carrega sidebar e páginas (Tudo vindo de utilitarios)
+from utilitarios.sidebar import show_sidebar
 page = show_sidebar()
 
 if page == "Dashboard":
-    from pages.dashboard import show_dashboard
+    from utilitarios.dashboard import show_dashboard
     show_dashboard()
 
 elif page == "Produtos":
-    from pages.produtos import show_produtos
+    from utilitarios.produtos import show_produtos
     show_produtos()
 
 elif page == "Cadastrar":
-    from pages.cadastro import show_cadastro
+    from utilitarios.cadastro import show_cadastro
     show_cadastro()
 
 elif page == "Lista de Compras":
-    from pages.lista_compras import show_lista_compras
+    from utilitarios.lista_compras import show_lista_compras
     show_lista_compras()
 
 elif page == "Relatórios":
-    from pages.relatorios import show_relatorios
+    from utilitarios.relatorios import show_relatorios
     show_relatorios()
 
 elif page == "Alertas":
-    from pages.alertas import show_alertas
+    from utilitarios.alertas import show_alertas
     show_alertas()
 
 elif page == "Usuários":
     if st.session_state.role == "admin":
-        from pages.usuarios import show_usuarios
+        from utilitarios.usuarios import show_usuarios
         show_usuarios()
     else:
         st.error("Acesso restrito a administradores.")
 
 elif page == "Ajuda":
-    from pages.Ajuda import show_ajuda
+    from utilitarios.Ajuda import show_ajuda
     show_ajuda()
-
