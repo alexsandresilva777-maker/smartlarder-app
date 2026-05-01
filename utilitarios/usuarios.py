@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.database import (listar_usuarios, criar_usuario,
+from utilitarios.database import (listar_usuarios, criar_usuario,
                              toggle_usuario, excluir_usuario, alterar_senha)
 
 ROLES = ["operador","gerente","admin"]
