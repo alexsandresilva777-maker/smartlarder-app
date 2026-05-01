@@ -1,5 +1,5 @@
 import streamlit as st
-from utilitarios.login import logout
+from utilitarios.auth import logout
 from utils.database import listar_produtos
 
 _PAGES = [
