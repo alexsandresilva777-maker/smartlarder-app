@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.database import verificar_login
+from utilitarios.database import verificar_login
 
 def check_login() -> bool:
     return st.session_state.get("logged_in", False)
