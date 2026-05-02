@@ -2,7 +2,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
-from utilitarios.database import listar_produtos, get_config_alertas
+from utils.database import listar_produtos, get_config_alertas
 
 def _linhas_html(produtos, cor_fundo, cor_borda):
     html = ""

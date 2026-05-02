@@ -1,5 +1,3 @@
-import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import imports  # noqa
 import streamlit as st
 from datetime import datetime, date
 from utils.database import (listar_produtos, excluir_produto,

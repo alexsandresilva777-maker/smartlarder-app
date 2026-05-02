@@ -1,8 +1,4 @@
-import os, sys
-
-# ── Resolução de módulos — OBRIGATÓRIO ser o primeiro import ──────────────────
-import imports  # noqa — registra utils.* e utilitarios.* no sys.modules
-
+import os
 import streamlit as st
 from utils.database import init_db
 

@@ -1,5 +1,3 @@
-import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import imports  # noqa
 import streamlit as st
 from utils.database import (listar_usuarios, criar_usuario,
                              toggle_usuario, excluir_usuario, alterar_senha)

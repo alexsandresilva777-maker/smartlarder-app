@@ -1,5 +1,3 @@
-import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import imports  # noqa
 import streamlit as st
 from utils.database import listar_produtos, get_config_alertas, salvar_config_alertas
 from utils.email_alert import enviar_alerta_email
