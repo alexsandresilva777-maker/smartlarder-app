@@ -1,3 +1,5 @@
+import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import imports  # noqa
 import streamlit as st
 from utils.auth import logout
 from utils.database import listar_produtos
@@ -9,16 +11,16 @@ _PAGES = [
     ("🛒", "Lista de Compras"),
     ("📊", "Relatórios"),
     ("🔔", "Alertas"),
+    ("❓", "Ajuda"),
 ]
 
 def show_sidebar() -> str:
     with st.sidebar:
-        role  = st.session_state.get("role","operador")
-        nome  = st.session_state.get("nome_completo","Usuário")
-        rc    = {"admin":"#e74c3c","gerente":"#e67e22","operador":"#2d6a4f"}.get(role,"#2d6a4f")
-        rb    = {"admin":"#fde8e8","gerente":"#fff3cd","operador":"#e8f5e9"}.get(role,"#e8f5e9")
+        role = st.session_state.get("role","operador")
+        nome = st.session_state.get("nome_completo","Usuário")
+        rc   = {"admin":"#e74c3c","gerente":"#e67e22","operador":"#2d6a4f"}.get(role,"#2d6a4f")
+        rb   = {"admin":"#fde8e8","gerente":"#fff3cd","operador":"#e8f5e9"}.get(role,"#e8f5e9")
 
-        # Logo + usuário — bloco HTML único, sem tags abertas/fechadas separadas
         st.markdown(
             f"""<div style='text-align:center;padding:16px 4px 14px;'>
               <div style='display:inline-flex;align-items:center;justify-content:center;
@@ -77,7 +79,7 @@ def show_sidebar() -> str:
 
         pages = list(_PAGES)
         if role == "admin":
-            pages.append(("👥","Usuários"))
+            pages.insert(-1, ("👥","Usuários"))  # antes de Ajuda
 
         for icon, name in pages:
             ativo = st.session_state.current_page == name

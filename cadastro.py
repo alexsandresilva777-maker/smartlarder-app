@@ -1,3 +1,5 @@
+import sys, os; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import imports  # noqa
 import streamlit as st
 from datetime import date
 from utils.database import inserir_produto, buscar_por_barcode
