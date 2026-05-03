@@ -530,3 +530,39 @@ def salvar_config_alertas(user_id: int, dados: dict):
         conn.commit()
     finally:
         conn.close()
+def migracao_segura(conn, tabela, coluna, definicao):
+    """
+    Adiciona coluna em tabela SQLite apenas se ela não existir.
+    Seguro para produção básica.
+    """
+    import sqlite3
+
+    try:
+        cursor = conn.cursor()
+
+        # Verifica se a tabela existe
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name=?
+        """, (tabela,))
+        
+        if not cursor.fetchone():
+            print(f"[AVISO] Tabela '{tabela}' não existe. Migração ignorada.")
+            return
+
+        # Verifica colunas existentes
+        cursor.execute(f"PRAGMA table_info({tabela})")
+        colunas = [info[1] for info in cursor.fetchall()]
+
+        # Se não existir, adiciona
+        if coluna not in colunas:
+            cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}")
+            conn.commit()
+            print(f"[OK] Coluna '{coluna}' adicionada à tabela '{tabela}'.")
+        else:
+            print(f"[INFO] Coluna '{coluna}' já existe em '{tabela}'.")
+
+    except sqlite3.OperationalError as e:
+        print(f"[ERRO SQLite] {e}")
+    except Exception as e:
+        print(f"[ERRO Geral] {e}")
