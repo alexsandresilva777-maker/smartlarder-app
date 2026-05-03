@@ -14,12 +14,34 @@ st.set_page_config(
 # ── CSS: esconde navegação nativa, mantém interface limpa ──────────────────────
 st.markdown("""
 <style>
-    [data-testid="stHeader"]     { display: none !important; }
+    /* Esconde apenas os elementos visuais do header, sem remover o container */
+    [data-testid="stHeader"] { visibility: hidden !important; height: 0 !important; }
+
+    /* Garante que o botão de colapso/expansão da sidebar SEMPRE apareça */
+    button[data-testid="stSidebarCollapseButton"] {
+        visibility: visible !important;
+        display: flex !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        z-index: 999999 !important;
+    }
+
+    /* Garante visibilidade quando sidebar está fechada */
+    [data-testid="collapsedControl"] button,
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        z-index: 999999 !important;
+    }
+
+    /* Oculta apenas elementos desnecessários */
     [data-testid="stSidebarNav"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
     .stDeployButton              { display: none !important; }
     #MainMenu                    { visibility: hidden !important; }
     footer                       { visibility: hidden !important; }
-    [data-testid="stDecoration"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
