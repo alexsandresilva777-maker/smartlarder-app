@@ -63,6 +63,7 @@ def main():
             st.error(f"Erro na página {page}: {e}")
 
     # Roteamento Estrito (Alinhado com 4 espaços)
+    # Bloco de Roteamento Limpo
     if page == "Dashboard":
         from telas.dashboard import show_dashboard; _load(show_dashboard)
     elif page == "Produtos":
@@ -87,6 +88,5 @@ def main():
             from telas.usuarios import show_usuarios; _load(show_usuarios)
         else:
             st.error("Acesso restrito.")
-
 if __name__ == "__main__":
     main()
