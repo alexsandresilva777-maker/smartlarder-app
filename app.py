@@ -112,7 +112,6 @@ def main():
             st.error("⛔ Acesso restrito ao plano Comercial.")
 
     elif page == "Relatórios":
-        # Passando user_id para evitar o erro da imagem e2dd15.png
         from telas.relatorios import show_relatorios; _load(show_relatorios)
 
     elif page == "Usuários":
