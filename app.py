@@ -85,7 +85,7 @@ def main():
             st.error(f"❌ Erro na página **{page}**: `{e}`")
             st.code(traceback.format_exc())
 
-    # Mapeamento de Páginas
+    # Mapeamento de Páginas (Garanta que o 'elif' esteja alinhado com o 'if')
     if page == "Dashboard":
         from telas.dashboard import show_dashboard; _load(show_dashboard)
     
@@ -104,7 +104,6 @@ def main():
     elif page == "Alertas":
         from telas.alertas import show_alertas; _load(show_alertas)
 
-    # Páginas com Filtro de Permissão (Comercial/SaaS)
     elif page == "Fornecedores":
         if tem_permissao("ver_fornecedores"):
             from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
@@ -119,6 +118,5 @@ def main():
             from telas.usuarios import show_usuarios; _load(show_usuarios)
         else:
             st.error("⛔ Acesso restrito a administradores.")
-
 if __name__ == "__main__":
     main()
