@@ -12,36 +12,31 @@ st.set_page_config(
 )
 
 # ── CSS: esconde navegação nativa, mantém interface limpa ──────────────────────
+# ── CSS RADICAL: Remove restrições para garantir funcionalidade ──────────────
 st.markdown("""
 <style>
-    /* Esconde apenas os elementos visuais do header, sem remover o container */
-    [data-testid="stHeader"] { visibility: hidden !important; height: 0 !important; }
+    /* 1. Esconde APENAS a lista de arquivos lateral (navegação nativa) */
+    [data-testid="stSidebarNav"] {display: none !important;}
 
-    /* Garante que o botão de colapso/expansão da sidebar SEMPRE apareça */
+    /* 2. Força o botão de abrir/fechar a ter uma cor forte para ser visto */
     button[data-testid="stSidebarCollapseButton"] {
-        visibility: visible !important;
+        background-color: #2d6a4f !important; /* Verde do seu tema */
+        color: white !important;
         display: flex !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
+        visibility: visible !important;
         z-index: 999999 !important;
     }
 
-    /* Garante visibilidade quando sidebar está fechada */
-    [data-testid="collapsedControl"] button,
-    [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        display: flex !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-        z-index: 999999 !important;
+    /* 3. Remove qualquer bloqueio no topo da tela */
+    [data-testid="stHeader"] {
+        background: rgba(255,255,255,0.1) !important;
+        pointer-events: none !important;
     }
-
-    /* Oculta apenas elementos desnecessários */
-    [data-testid="stSidebarNav"] { display: none !important; }
-    [data-testid="stDecoration"] { display: none !important; }
-    .stDeployButton              { display: none !important; }
-    #MainMenu                    { visibility: hidden !important; }
-    footer                       { visibility: hidden !important; }
+    
+    /* 4. Libera o clique apenas para o botão de menu */
+    [data-testid="stHeader"] button {
+        pointer-events: auto !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
