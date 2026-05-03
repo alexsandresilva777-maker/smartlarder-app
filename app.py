@@ -14,9 +14,10 @@ st.set_page_config(
 # ── CSS: esconde navegação nativa, mantém interface limpa ──────────────────────
 # ── CSS RADICAL: Remove restrições para garantir funcionalidade ──────────────
 # ── BLOCO CSS CORRIGIDO: Visibilidade total de textos e inputs ──────────────
+# ── BLOCO CSS FINAL: Correção de Contraste para Fundos Claros e Escuros ──────
 st.markdown("""
 <style>
-    /* 1. Mantém o botão de abrir/fechar funcional e visível */
+    /* 1. Mantém o botão de abrir/fechar funcional */
     button[data-testid="stSidebarCollapseButton"] {
         background-color: #2d6a4f !important;
         color: white !important;
@@ -25,33 +26,35 @@ st.markdown("""
         z-index: 999999 !important;
     }
 
-    /* 2. FORÇA TEXTO PRETO EM FUNDO BRANCO PARA TODOS OS INPUTS */
-    /* Isso resolve o problema de caracteres invisíveis */
+    /* 2. Inputs: Texto preto em fundo branco para digitação visível */
     input {
-        color: #1a1a1a !important; /* Texto quase preto */
-        background-color: #ffffff !important; /* Fundo branco puro */
-        -webkit-text-fill-color: #1a1a1a !important; /* Garante no Chrome/Safari */
+        color: #1a1a1a !important;
+        background-color: #ffffff !important;
+        -webkit-text-fill-color: #1a1a1a !important;
     }
-
-    /* Aplica especificamente em campos de texto, números e áreas de texto */
     .stTextInput input, .stNumberInput input, .stTextArea textarea, .stSelectbox div {
         color: #1a1a1a !important;
         background-color: #ffffff !important;
     }
 
-    /* 3. Ajusta a cor dos rótulos (nomes acima das caixas) para branco */
-    /* para contrastar com o fundo escuro que você está usando */
-    label, .stMarkdown p {
-        color: #ffffff !important;
+    /* 3. AQUI ESTÁ A MUDANÇA: Cor escura para aparecer no fundo branco */
+    /* Isso resolve os títulos "sumidos" na imagem 4 */
+    label, .stMarkdown p, h1, h2, h3, [data-testid="stWidgetLabel"] {
+        color: #262730 !important;
     }
 
-    /* 4. Limpeza de interface padrão */
-    [data-testid="stSidebarNav"] {display: none !important;}
-    .stDeployButton {display: none !important;}
-    footer {visibility: hidden !important;}
-    [data-testid="stHeader"] {background: rgba(0,0,0,0) !important; pointer-events: none !important;}
-    [data-testid="stHeader"] button {pointer-events: auto !important;}
-    .block-container {padding-top: 1rem !important;}
+    /* 4. Limpeza de interface e ajustes de layout */
+    [data-testid="stSidebarNav"] { display: none !important; }
+    .stDeployButton { display: none !important; }
+    footer { visibility: hidden !important; }
+    [data-testid="stHeader"] { 
+        background: rgba(0,0,0,0) !important; 
+        pointer-events: none !important; 
+    }
+    [data-testid="stHeader"] button { 
+        pointer-events: auto !important; 
+    }
+    .block-container { padding-top: 1rem !important; }
 </style>
 """, unsafe_allow_html=True)
 # ── CSS externo ────────────────────────────────────────────────────────────────
