@@ -5,8 +5,10 @@ from datetime import date
 from utils.database import listar_produtos, listar_movimentacoes, get_stats
 
 def show_relatorios():
-    user_id = st.session_state.get("user_id", 1)
-    st.markdown("## 📊 Relatórios")
+user_id = st.session_state.get('user_id')
+    # ---------------------------------
+    
+    st.title("📊 Relatórios")
     tab1, tab2, tab3 = st.tabs(["📋 Estoque Completo", "📈 Movimentações", "📉 Análise de Validade"])
     with tab1: _estoque()
     with tab2: _movimentacoes()
