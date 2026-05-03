@@ -13,33 +13,47 @@ st.set_page_config(
 
 # ── CSS: esconde navegação nativa, mantém interface limpa ──────────────────────
 # ── CSS RADICAL: Remove restrições para garantir funcionalidade ──────────────
+# ── BLOCO CSS CORRIGIDO: Visibilidade total de textos e inputs ──────────────
 st.markdown("""
 <style>
-    /* 1. Esconde APENAS a lista de arquivos lateral (navegação nativa) */
-    [data-testid="stSidebarNav"] {display: none !important;}
-
-    /* 2. Força o botão de abrir/fechar a ter uma cor forte para ser visto */
+    /* 1. Mantém o botão de abrir/fechar funcional e visível */
     button[data-testid="stSidebarCollapseButton"] {
-        background-color: #2d6a4f !important; /* Verde do seu tema */
+        background-color: #2d6a4f !important;
         color: white !important;
         display: flex !important;
         visibility: visible !important;
         z-index: 999999 !important;
     }
 
-    /* 3. Remove qualquer bloqueio no topo da tela */
-    [data-testid="stHeader"] {
-        background: rgba(255,255,255,0.1) !important;
-        pointer-events: none !important;
+    /* 2. FORÇA TEXTO PRETO EM FUNDO BRANCO PARA TODOS OS INPUTS */
+    /* Isso resolve o problema de caracteres invisíveis */
+    input {
+        color: #1a1a1a !important; /* Texto quase preto */
+        background-color: #ffffff !important; /* Fundo branco puro */
+        -webkit-text-fill-color: #1a1a1a !important; /* Garante no Chrome/Safari */
     }
-    
-    /* 4. Libera o clique apenas para o botão de menu */
-    [data-testid="stHeader"] button {
-        pointer-events: auto !important;
+
+    /* Aplica especificamente em campos de texto, números e áreas de texto */
+    .stTextInput input, .stNumberInput input, .stTextArea textarea, .stSelectbox div {
+        color: #1a1a1a !important;
+        background-color: #ffffff !important;
     }
+
+    /* 3. Ajusta a cor dos rótulos (nomes acima das caixas) para branco */
+    /* para contrastar com o fundo escuro que você está usando */
+    label, .stMarkdown p {
+        color: #ffffff !important;
+    }
+
+    /* 4. Limpeza de interface padrão */
+    [data-testid="stSidebarNav"] {display: none !important;}
+    .stDeployButton {display: none !important;}
+    footer {visibility: hidden !important;}
+    [data-testid="stHeader"] {background: rgba(0,0,0,0) !important; pointer-events: none !important;}
+    [data-testid="stHeader"] button {pointer-events: auto !important;}
+    .block-container {padding-top: 1rem !important;}
 </style>
 """, unsafe_allow_html=True)
-
 # ── CSS externo ────────────────────────────────────────────────────────────────
 _CSS = os.path.join(os.path.dirname(__file__), "assets", "style.css")
 if os.path.exists(_CSS):
