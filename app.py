@@ -12,7 +12,7 @@ st.set_page_config(
     menu_items={}
 )
 
-# ── CSS DE EMERGÊNCIA: Foco no botão e layout ──────────────────────────────────
+# ── CSS DE EMERGÊNCIA ──────────────────────────────────────────────────────────
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] {display: none !important;}
@@ -36,14 +36,14 @@ if os.path.exists(_CSS):
 def main():
     from utils.database import init_db, check_alerts
 
-    # 1. Inicializa o banco de dados e executa migrações (empresa_id, role)
+    # 1. Inicializa o banco de dados
     try:
         init_db()
     except Exception as e:
         st.error(f"❌ Erro crítico no banco de dados: {e}")
         st.stop()
 
-    # 2. Estado de sessão padrão (Ajustado para SaaS)
+    # 2. Estado de sessão padrão
     defaults = {
         "logged_in":     False,
         "user_id":       None,
@@ -65,7 +65,7 @@ def main():
         show_login()
         st.stop()
 
-    # 4. Alertas automáticos (roda uma vez por login)
+    # 4. Alertas automáticos
     if not st.session_state.alerts:
         try:
             st.session_state.alerts = check_alerts(st.session_state.user_id)
@@ -76,7 +76,7 @@ def main():
     from telas.sidebar import show_sidebar
     page = show_sidebar()
 
-    # 6. Roteamento de páginas com tratamento de erros
+    # 6. Função auxiliar de carga
     def _load(fn):
         try:
             fn()
@@ -85,7 +85,7 @@ def main():
             st.error(f"❌ Erro na página **{page}**: `{e}`")
             st.code(traceback.format_exc())
 
-    # Mapeamento de Páginas (Garanta que o 'elif' esteja alinhado com o 'if')
+    # ── Roteamento de Páginas (Alinhamento Estrito) ────────────────────────────
     if page == "Dashboard":
         from telas.dashboard import show_dashboard; _load(show_dashboard)
     
@@ -118,5 +118,7 @@ def main():
             from telas.usuarios import show_usuarios; _load(show_usuarios)
         else:
             st.error("⛔ Acesso restrito a administradores.")
+
+# ── Execução do App ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()
