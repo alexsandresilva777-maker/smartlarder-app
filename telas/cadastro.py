@@ -14,8 +14,14 @@ def show_cadastro():
     if "lk_codigo" not in st.session_state: st.session_state.lk_codigo = ""
     if "dados_busca" not in st.session_state: st.session_state.dados_busca = {}
 
-    # --- NOVO: Scanner de Câmera Sob Demanda ---
-    with st.expander("📸 Acionar Scanner (Câmera)", expanded=False):
+  # --- Scanner de Câmera Ajustado para evitar Loop ---
+    if "scanner_ativo" not in st.session_state: 
+        st.session_state.scanner_ativo = False
+
+    # O checkbox agora controla o estado
+    ativar = st.checkbox("📸 Acionar Scanner (Câmera)", value=st.session_state.scanner_ativo)
+    
+    if ativar:
         img_file = st.camera_input("Centralize o código de barras e tire a foto")
         
         if img_file:
@@ -23,9 +29,7 @@ def show_cadastro():
                 from pyzbar.pyzbar import decode
                 from PIL import Image, ImageOps
                 
-                # Processamento da imagem para facilitar a leitura
                 img = Image.open(img_file)
-                # Converte para cinza e aumenta contraste para códigos difíceis
                 img_proc = ImageOps.grayscale(img)
                 img_proc = ImageOps.autocontrast(img_proc)
                 
@@ -33,18 +37,25 @@ def show_cadastro():
                 
                 if decoded_objects:
                     codigo_scan = decoded_objects[0].data.decode("utf-8")
+                    
+                    # 1. Salva o código
                     st.session_state.lk_codigo = codigo_scan
-                    st.success(f"🎯 Código Lido: {codigo_scan}")
-                    # Ao detectar, tentamos buscar automaticamente
+                    # 2. Desliga o scanner para quebrar o loop
+                    st.session_state.scanner_ativo = False 
+                    
+                    # 3. Busca os dados imediatamente
                     res_local = db.buscar_produto_por_codigo(codigo_scan, user_id)
                     if res_local:
                         st.session_state.dados_busca = dict(res_local)
                     else:
+                   # Busca na nuvem se não tiver no estoque
                         res_gb = buscar_por_ean(codigo_scan)
                         st.session_state.dados_busca = res_gb if res_gb else {}
+                        
+                    st.success(f"🎯 Código Detectado: {codigo_scan}")
                     st.rerun()
-                else:
-                    st.warning("❌ Código não detectado. Tente aproximar mais a câmera ou melhorar a iluminação.")
+                    else:
+                   st.warning("⚠️ Código não detectado. Tente ajustar o foco ou a luz.")
             except Exception as e:
                 st.error(f"Erro no scanner: {e}")
 
