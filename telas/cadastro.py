@@ -79,15 +79,15 @@ def show_cadastro():
                     except Exception:
                         st.warning("Não foi possível decodificar. Digite o código manualmente.")
         # --- LOGICA DE BUSCA AUTOMÁTICA ---
-        detalhes_produto = {}
-        codigo_para_busca = st.session_state.get("lk_codigo", "")
+    detalhes_produto = {}
+    codigo_para_busca = st.session_state.get("lk_codigo", "")
     
-        if codigo_para_busca:
-            # Aqui chamamos a função que você já tem no database.py
-            from utils.database import buscar_produto_por_codigo # Garanta que o nome está correto
-            res = buscar_produto_por_codigo(codigo_para_busca, st.session_state.empresa_id)
-            if res:
-                detalhes_produto = res
+    if codigo_para_busca:
+    # Aqui chamamos a função que você já tem no database.py
+    from utils.database import buscar_produto_por_codigo # Garanta que o nome está correto
+    res = buscar_produto_por_codigo(codigo_para_busca, st.session_state.empresa_id)
+    if res:
+    detalhes_produto = res
         # ----------------------------------
 
     # ── Processar busca ───────────────────────────────────
