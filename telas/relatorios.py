@@ -5,14 +5,16 @@ from datetime import datetime, timedelta
 from utils.database import listar_produtos
 
 def show_relatorios():
-    # Recupera credenciais do SaaS
+   # Recupera credenciais com valores padrão para evitar o crash imediato
     user_id = st.session_state.get("user_id")
     empresa_id = st.session_state.get("empresa_id")
     
     if not user_id or not empresa_id:
-        st.error("❌ Sessão inválida. Reabra o app.")
+        st.warning("⚠️ Identificação de segurança não encontrada.")
+        if st.button("Ir para tela de Login"):
+            st.session_state.current_page = "Login" # ou o nome da sua tela inicial
+            st.rerun()
         st.stop()
-
     st.markdown("## 📊 Painel de Relatórios")
     
     # Busca dados com foco no isolamento por empresa
