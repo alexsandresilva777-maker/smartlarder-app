@@ -587,3 +587,18 @@ def migracao_segura(conn, tabela, coluna, definicao):
         print(f"[ERRO SQLite] {e}")
     except Exception as e:
         print(f"[ERRO Geral] {e}")
+# ── Busca específica por código (Adicionado para o formulário de cadastro) ─────
+def buscar_produto_por_codigo(codigo: str, user_id: int) -> dict | None:
+    """
+    Busca um produto específico pelo código de barras dentro da conta do usuário.
+    """
+    conn = get_conn()
+    try:
+        # Buscamos o produto que pertence ao usuário logado
+        row = conn.execute(
+            "SELECT * FROM produtos WHERE codigo_barras=? AND user_id=? LIMIT 1", 
+            (codigo, user_id)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
