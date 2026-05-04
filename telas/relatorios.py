@@ -31,53 +31,50 @@ def show_relatorios():
     # --- ABA 2: MOVIMENTAÇÕES ---
     with tab2:
         st.subheader("Giro de Estoque")
-        # Seleção segura de colunas
         cols = [c for c in ['nome', 'quantidade', 'unidade'] if c in df_raw.columns]
         st.table(df_raw[cols])
 
-    # --- ABA 3: VALIDADE (Versão SaaS Segura) ---
+    # --- ABA 3: VALIDADE ---
     with tab3:
         df_v = df_raw.copy()
+
+        # Segurança: garante que a coluna existe
+        if 'validade' not in df_v.columns:
+            st.warning("Coluna 'validade' não encontrada.")
+            return
+
         df_v['validade'] = pd.to_datetime(df_v['validade'], errors='coerce')
+
+        # Versão estável (sem problemas de timezone)
+        agora = datetime.now()
+        hoje = agora.date()
+
+        def definir_status(dt):
+            if pd.isna(dt):
+                return "⚪ Sem data"
+            try:
+                dt_date = dt.date()
+            except:
+                return "⚪ Sem data"
+
+            if dt_date < hoje: return "❌ VENCIDO"
+            if dt_date <= hoje + timedelta(days=15): return "⚠️ CRÍTICO (15 dias)"
+            if dt_date <= hoje + timedelta(days=30): return "🟡 ALERTA (30 dias)"
+            return "✅ Ok"
+
+        # 🔥 AGORA ESTÁ NO LUGAR CERTO (dentro do tab3)
+        df_v['Status'] = df_v['validade'].apply(definir_status)
+
+        # Filtro interativo
+        opcoes = ["❌ VENCIDO", "⚠️ CRÍTICO (15 dias)", "🟡 ALERTA (30 dias)", "✅ Ok"]
+        selecionados = st.multiselect("Foco de Atenção:", opcoes, default=opcoes[:2])
+
+        if not selecionados:
+            st.warning("Selecione ao menos um status.")
+        else:
+            exibir = df_v[df_v['Status'].isin(selecionados)].sort_values('validade')
+
+            cols = [c for c in ['nome', 'validade', 'quantidade', 'Status'] if c in exibir.columns]
+            st.dataframe(exibir[cols], use_container_width=True)
         
-        # Ajuste de Fuso Horário Local
-       # Ajuste de Fuso Horário Local (VERSÃO SEGURA)
-tz = pytz.timezone("America/Sao_Paulo")
-agora = datetime.now(tz)
-hoje = agora.date()
-
-def to_local(dt):
-    if pd.isna(dt):
-        return None
-    try:
-        if dt.tzinfo is None:
-            return dt.tz_localize(tz)
-        return dt.tz_convert(tz)
-    except:
-        return None
-
-def definir_status(dt):
-    dt_aware = to_local(dt)
-    if dt_aware is None:
-        return "⚪ Sem data"
-
-    dt_date = dt_aware.date()
-
-    if dt_date < hoje: return "❌ VENCIDO"
-    if dt_date <= hoje + timedelta(days=15): return "⚠️ CRÍTICO (15 dias)"
-    if dt_date <= hoje + timedelta(days=30): return "🟡 ALERTA (30 dias)"
-    return "✅ Ok"
-
-df_v['Status'] = df_v['validade'].apply(definir_status)
-
-# Filtro interativo
-opcoes = ["❌ VENCIDO", "⚠️ CRÍTICO (15 dias)", "🟡 ALERTA (30 dias)", "✅ Ok"]
-selecionados = st.multiselect("Foco de Atenção:", opcoes, default=opcoes[:2])
-
-if not selecionados:
-    st.warning("Selecione ao menos um status.")
-else:
-    exibir = df_v[df_v['Status'].isin(selecionados)].sort_values('validade')
-
-    cols = [c for c in ['nome', 'validade', 'quantidade', 'Status'] if c in exibir.columns]
-    st.dataframe(exibir[cols], use_container_width=True)
+    
