@@ -62,7 +62,6 @@ def show_cadastro():
                     import io
                     pil = Image.open(io.BytesIO(img.getvalue()))
                     codigos = pyzbar.decode(pil)
-                
                     if codigos:
                         detected = codigos[0].data.decode("utf-8")
                         st.session_state.lk_codigo = detected
