@@ -35,11 +35,11 @@ def main():
         st.error(f"Erro no banco: {e}")
         st.stop()
 
-    # Estado de sessão
+ # -- Estado de sessão --
     defaults = {
         "logged_in": False,
         "user_id": None,
-        "empresa_id": None,
+        "empresa_id": None,  # Essencial para o isolamento de dados SaaS
         "role": "",
         "current_page": "Dashboard",
         "alerts": {}
@@ -48,11 +48,15 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    if not st.session_state.logged_in or st.session_state.user_id is None:
+    # BLOQUEIO DE SEGURANÇA (Ajustado)
+    # Verificamos se está logado E se possui os IDs necessários para as consultas
+    if not st.session_state.logged_in or st.session_state.user_id is None or st.session_state.empresa_id is None:
         from telas.login import show_login
         show_login()
-        st.stop()
+        st.stop()  # Impede que o app tente carregar o sidebar ou páginas sem os IDs
 
+    # -- Carregamento da Interface --
+    # Só chega aqui se passar pelo bloqueio acima
     from telas.sidebar import show_sidebar
     page = show_sidebar()
 
@@ -61,6 +65,10 @@ def main():
             fn()
         except Exception as e:
             st.error(f"Erro na página {page}: {e}")
+
+    # Roteamento Estrito (Mantendo sua estrutura original)
+    if page == "Dashboard":
+        from telas.dashboard import show_dashboard; _load(show_dashboard)
 
     # Roteamento Estrito (Alinhado com 4 espaços)
     # Bloco de Roteamento Limpo
