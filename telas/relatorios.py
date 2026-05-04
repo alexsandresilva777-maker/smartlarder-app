@@ -41,23 +41,43 @@ def show_relatorios():
         df_v['validade'] = pd.to_datetime(df_v['validade'], errors='coerce')
         
         # Ajuste de Fuso Horário Local
-        tz = pytz.timezone("America/Sao_Paulo")
-        agora = datetime.now(tz)
+       # Ajuste de Fuso Horário Local (VERSÃO SEGURA)
+tz = pytz.timezone("America/Sao_Paulo")
+agora = datetime.now(tz)
+hoje = agora.date()
 
-        def definir_status(dt):
-            if pd.isna(dt): return "⚪ Sem data"
-            # Garante que a comparação ignore horas para ser justo com o dia
-            dt_aware = dt.tz_localize(tz) if dt.tzinfo is None else dt.astimezone(tz)
-            if dt_aware < agora: return "❌ VENCIDO"
-            if dt_aware <= agora + timedelta(days=15): return "⚠️ CRÍTICO (15 dias)"
-            if dt_aware <= agora + timedelta(days=30): return "🟡 ALERTA (30 dias)"
-            return "✅ Ok"
+def to_local(dt):
+    if pd.isna(dt):
+        return None
+    try:
+        if dt.tzinfo is None:
+            return dt.tz_localize(tz)
+        return dt.tz_convert(tz)
+    except:
+        return None
 
-        df_v['Status'] = df_v['validade'].apply(definir_status)
-        
-        # Filtro interativo
-        opcoes = ["❌ VENCIDO", "⚠️ CRÍTICO (15 dias)", "🟡 ALERTA (30 dias)", "✅ Ok"]
-        selecionados = st.multiselect("Foco de Atenção:", opcoes, default=opcoes[:2])
-        
-        exibir = df_v[df_v['Status'].isin(selecionados)].sort_values('validade')
-        st.dataframe(exibir[['nome', 'validade', 'quantidade', 'Status']], use_container_width=True)
+def definir_status(dt):
+    dt_aware = to_local(dt)
+    if dt_aware is None:
+        return "⚪ Sem data"
+
+    dt_date = dt_aware.date()
+
+    if dt_date < hoje: return "❌ VENCIDO"
+    if dt_date <= hoje + timedelta(days=15): return "⚠️ CRÍTICO (15 dias)"
+    if dt_date <= hoje + timedelta(days=30): return "🟡 ALERTA (30 dias)"
+    return "✅ Ok"
+
+df_v['Status'] = df_v['validade'].apply(definir_status)
+
+# Filtro interativo
+opcoes = ["❌ VENCIDO", "⚠️ CRÍTICO (15 dias)", "🟡 ALERTA (30 dias)", "✅ Ok"]
+selecionados = st.multiselect("Foco de Atenção:", opcoes, default=opcoes[:2])
+
+if not selecionados:
+    st.warning("Selecione ao menos um status.")
+else:
+    exibir = df_v[df_v['Status'].isin(selecionados)].sort_values('validade')
+
+    cols = [c for c in ['nome', 'validade', 'quantidade', 'Status'] if c in exibir.columns]
+    st.dataframe(exibir[cols], use_container_width=True)
