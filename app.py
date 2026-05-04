@@ -34,8 +34,8 @@ def main():
     except Exception as e:
         st.error(f"Erro no banco: {e}")
         st.stop()
-
- # -- Estado de sessão --
+ 
+    # -- Estado de sessão --
     defaults = {
         "logged_in": False,
         "user_id": None,
