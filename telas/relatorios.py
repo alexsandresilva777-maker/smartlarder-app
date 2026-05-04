@@ -19,7 +19,7 @@ def show_relatorios():
     
     # Busca dados com foco no isolamento por empresa
     df_raw = listar_produtos(user_id, empresa_id)
-    df_raw = pd.DataFrame(df_raw)
+    df_raw = pd.DataFrame(dados_brutos)
     tab1, tab2, tab3 = st.tabs(["📦 Estoque", "📈 Movimentos", "📅 Gestão de Validade"])
 
     if df_raw is None or df_raw.empty:
