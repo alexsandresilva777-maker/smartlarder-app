@@ -38,6 +38,7 @@ def show_login():
                 st.session_state.username      = user["username"]
                 st.session_state.nome_completo = user["nome"]
                 st.session_state.role          = user["role"]
+                st.session_state.empresa_id = user["empresa_id"]
                 st.session_state.alerts        = {}   # força check_alerts no próximo ciclo
                 st.session_state.batch_list    = []
                 st.rerun()
