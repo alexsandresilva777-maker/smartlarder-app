@@ -88,7 +88,7 @@ def show_cadastro():
     res = buscar_produto_por_codigo(codigo_para_busca, st.session_state.empresa_id)
     if res:
     detalhes_produto = res
-        # ----------------------------------
+    # ----------------------------------
 
     # ── Processar busca ───────────────────────────────────
     if btn_buscar and codigo_input.strip():
