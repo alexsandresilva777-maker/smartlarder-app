@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import os
 import streamlit as st
 from utils.auth import tem_permissao
 
@@ -29,6 +28,7 @@ st.markdown("""
 def main():
     from utils.database import init_db, check_alerts
 
+    # Inicializa o Banco
     try:
         init_db()
     except Exception as e:
@@ -36,26 +36,27 @@ def main():
         st.stop()
 
     # -- Estado de sessão --
-    # Tudo abaixo precisa ter esses 4 espaços de recuo
+    # Cada linha abaixo DEVE ter exatamente 4 espaços de recuo
     defaults = {
         "logged_in": False,
         "user_id": None,
-        "empresa_id": None, 
+        "empresa_id": None,
         "role": "",
         "current_page": "Dashboard",
         "alerts": {}
     }
+    
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # BLOQUEIO DE SEGURANÇA
+    # BLOQUEIO DE SEGURANÇA (Essencial para SaaS)
     if not st.session_state.logged_in or st.session_state.user_id is None or st.session_state.empresa_id is None:
         from telas.login import show_login
         show_login()
         st.stop()
 
-    # -- Carregamento da Interface --
+    # -- Interface e Navegação --
     from telas.sidebar import show_sidebar
     page = show_sidebar()
 
@@ -65,7 +66,7 @@ def main():
         except Exception as e:
             st.error(f"Erro na página {page}: {e}")
 
-    # Roteamento Estrito
+    # Roteamento Centralizado
     if page == "Dashboard":
         from telas.dashboard import show_dashboard; _load(show_dashboard)
     elif page == "Produtos":
@@ -78,13 +79,13 @@ def main():
         from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
     elif page == "Alertas":
         from telas.alertas import show_alertas; _load(show_alertas)
+    elif page == "Relatórios":
+        from telas.relatorios import show_relatorios; _load(show_relatorios)
     elif page == "Fornecedores":
         if tem_permissao("ver_fornecedores"):
             from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
         else:
             st.error("Acesso restrito.")
-    elif page == "Relatórios":
-        from telas.relatorios import show_relatorios; _load(show_relatorios)
     elif page == "Usuários":
         if st.session_state.role == "admin":
             from telas.usuarios import show_usuarios; _load(show_usuarios)
