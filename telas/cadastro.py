@@ -60,18 +60,9 @@ def show_cadastro():
                     from PIL import Image, ImageOps # Adicionamos ImageOps
                     from pyzbar import pyzbar
                     import io
-                    
-                    # 1. Abre a imagem original
-                    pil_original = Image.open(io.BytesIO(img.getvalue()))
-                    
-                    # 2. Converte para Tons de Cinza (Facilita a leitura das barras pretas)
-                    pil_cinza = ImageOps.grayscale(pil_original)
-                    
-                    # 3. Melhora o contraste automaticamente (Elimina reflexos leves)
-                    pil_final = ImageOps.autocontrast(pil_cinza)
-                    
-                    # 4. Tenta decodificar a imagem otimizada
-                    codigos = pyzbar.decode(pil_final)
+                    pil = Image.open(io.BytesIO(img.getvalue()))
+                    codigos = pyzbar.decode(pil)
+                
                     if codigos:
                         detected = codigos[0].data.decode("utf-8")
                         st.session_state.lk_codigo = detected
