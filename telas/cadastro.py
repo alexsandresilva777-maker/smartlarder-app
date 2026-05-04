@@ -54,12 +54,18 @@ def show_cadastro():
             img = st.camera_input("Capturar código de barras", key="cam_snap")
             if img:
                 try:
-                    from PIL import Image
+                   try:
+                    from PIL import Image, ImageOps
                     from pyzbar import pyzbar
                     import io
-                    from PIL import Image, ImageOps # Adicionamos ImageOps
-                    from pyzbar import pyzbar
-                    import io
+                    
+                    # Processamento da imagem
+                    pil = Image.open(io.BytesIO(img.getvalue()))
+                    # Otimização para leitura
+                    pil = ImageOps.grayscale(pil)
+                    pil = ImageOps.autocontrast(pil)
+                    
+                    codigos = pyzbar.decode(pil)
                     pil = Image.open(io.BytesIO(img.getvalue()))
                     codigos = pyzbar.decode(pil)
                     if codigos:
