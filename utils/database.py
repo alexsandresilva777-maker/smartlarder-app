@@ -41,6 +41,27 @@ def init_db():
     """
     conn = get_conn()
     c    = conn.cursor()
+    # --- INÍCIO DA CORREÇÃO ---
+    # 1. Garante que a tabela de usuários tenha a estrutura correta
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            senha TEXT,
+            nome TEXT,
+            role TEXT,
+            empresa_id INTEGER DEFAULT 1
+        )
+    ''')
+
+    # 2. MIGRAÇÃO: Se a tabela já existia sem a coluna empresa_id, este código a adiciona
+    try:
+        c.execute("ALTER TABLE usuarios ADD COLUMN empresa_id INTEGER DEFAULT 1")
+        conn.commit()
+    except:
+        # Se a coluna já existir, o SQLite dará erro e o código apenas ignora e segue em frente
+        pass
+    # --- FIM DA CORREÇÃO ---
 
     # ── Criação das tabelas ────────────────────────────────────────────────────
     c.executescript("""
