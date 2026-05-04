@@ -75,14 +75,21 @@ def show_cadastro():
                     st.warning("Não foi possível decodificar. Digite o código manualmente.")
 
     # --- LÓGICA DE BUSCA AUTOMÁTICA ---
+# --- LÓGICA DE BUSCA AUTOMÁTICA ---
     detalhes_produto = {}
-    codigo_para_busca = st.session_state.get("lk_codigo", "")
+    codigo_para_busca = st.session_state.get("lk_codigo", "").strip()
 
     if codigo_para_busca:
+        # Importamos aqui para garantir que o banco esteja pronto
         from utils.database import buscar_produto_por_codigo
-        res_local = buscar_produto_por_codigo(codigo_para_busca, st.session_state.get("empresa_id"))
+        
+        # Tentamos buscar usando o ID do usuário da sessão
+        res_local = buscar_produto_por_codigo(codigo_para_busca, user_id)
+        
         if res_local:
             detalhes_produto = res_local
+            # Se achou no banco, preenche o estado da busca
+            st.session_state.lk_result = dict(res_local)
 
     # Processar busca global se o botão for clicado
     if btn_buscar and codigo_input.strip():
