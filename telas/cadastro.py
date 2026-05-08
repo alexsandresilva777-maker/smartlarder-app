@@ -116,7 +116,7 @@ def show_cadastro():
 
         submitted = st.form_submit_button("💾 Salvar no SmartLarder", type="primary", use_container_width=True)
 
-    if submitted:
+   if submitted:
         if not nome:
             st.error("O nome é obrigatório!")
         else:
@@ -127,9 +127,11 @@ def show_cadastro():
                 "quantidade": quantidade,
                 "unidade": unidade,
                 "validade": str(validade),
-                "localizacao": localizacao,
-                "lote": "",            
-                "fornecedor": info.get("fornecedor", ""),
+                "lote": lote,  # Agora pegando do input
+                "localizacao": localizacao, # Agora pegando do input
+                "preco_custo": preco_custo,
+                "estoque_minimo": estoque_minimo,
+                "fornecedor": info.get("fornecedor", "Geral"),
                 "criado_por": st.session_state.get("username", "admin")
             }
             db.inserir_produto(novo_prod, user_id, novo_prod["criado_por"])
