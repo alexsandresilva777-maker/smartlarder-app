@@ -127,8 +127,8 @@ def show_cadastro():
                 "quantidade": quantidade,
                 "unidade": unidade,
                 "validade": str(validade),
-                "lote": lote,  # Agora pegando do input
-                "localizacao": localizacao, # Agora pegando do input
+                "lote": lote,
+                "localizacao": localizacao,
                 "preco_custo": preco_custo,
                 "estoque_minimo": estoque_minimo,
                 "fornecedor": info.get("fornecedor", "Geral"),
