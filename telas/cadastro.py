@@ -21,7 +21,6 @@ def show_cadastro():
     ativar = st.checkbox("📸 Acionar Scanner (Câmera)", value=st.session_state.scanner_ativo)
     
     if ativar:
-        # A key="input_camera" é essencial para podermos limpar a foto depois
         img_file = st.camera_input("Centralize o código de barras", key="input_camera")
         
         if img_file:
@@ -34,16 +33,12 @@ def show_cadastro():
                 
                 if decoded_objects:
                     codigo_scan = decoded_objects[0].data.decode("utf-8")
-                    
-                    # 1. Salva o resultado
                     st.session_state.lk_codigo = codigo_scan
-                    
-                    # 2. Mata o Loop: Desliga o scanner e limpa o buffer da foto
                     st.session_state.scanner_ativo = False
+                    
                     if "input_camera" in st.session_state:
                         del st.session_state["input_camera"]
                     
-                    # 3. Busca Automática (Local ou Nuvem)
                     res_local = db.buscar_produto_por_codigo(codigo_scan, user_id)
                     if res_local:
                         st.session_state.dados_busca = dict(res_local)
@@ -105,7 +100,8 @@ def show_cadastro():
         cat_val = info.get("categoria", "Alimentos")
         cat_idx = CATEGORIAS.index(cat_val) if cat_val in CATEGORIAS else 0
         categoria = st.selectbox("Categoria *", CATEGORIAS, index=cat_idx)
-    # Novos campos para satisfazer o Banco de Dados
+
+        # Novos campos para satisfazer o Banco de Dados
         col_extra1, col_extra2 = st.columns(2)
         with col_extra1:
             lote = st.text_input("Lote", value=info.get("lote", ""))
@@ -116,7 +112,8 @@ def show_cadastro():
 
         submitted = st.form_submit_button("💾 Salvar no SmartLarder", type="primary", use_container_width=True)
 
-   if submitted:
+    # O SEGREDO ESTÁ AQUI: o 'if submitted' deve estar alinhado com o 'with st.form'
+    if submitted:
         if not nome:
             st.error("O nome é obrigatório!")
         else:
