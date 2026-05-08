@@ -105,9 +105,15 @@ def show_cadastro():
         cat_val = info.get("categoria", "Alimentos")
         cat_idx = CATEGORIAS.index(cat_val) if cat_val in CATEGORIAS else 0
         categoria = st.selectbox("Categoria *", CATEGORIAS, index=cat_idx)
-    # NOVO CAMPO ADICIONADO AQUI
-        localizacao = st.text_input("Localização (Onde o produto está?)", value="Gôndola")
-        
+    # Novos campos para satisfazer o Banco de Dados
+        col_extra1, col_extra2 = st.columns(2)
+        with col_extra1:
+            lote = st.text_input("Lote", value=info.get("lote", ""))
+            localizacao = st.text_input("Localização", value="Gôndola")
+        with col_extra2:
+            preco_custo = st.number_input("Preço de Custo (R$)", min_value=0.0, value=0.0)
+            estoque_minimo = st.number_input("Estoque Mínimo", min_value=0.0, value=1.0)
+
         submitted = st.form_submit_button("💾 Salvar no SmartLarder", type="primary", use_container_width=True)
 
     if submitted:
