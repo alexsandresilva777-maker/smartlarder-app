@@ -105,7 +105,9 @@ def show_cadastro():
         cat_val = info.get("categoria", "Alimentos")
         cat_idx = CATEGORIAS.index(cat_val) if cat_val in CATEGORIAS else 0
         categoria = st.selectbox("Categoria *", CATEGORIAS, index=cat_idx)
-
+    # NOVO CAMPO ADICIONADO AQUI
+    localizacao = st.text_input("Localização (Onde o produto está?)", value="Gôndola")
+        
         submitted = st.form_submit_button("💾 Salvar no SmartLarder", type="primary", use_container_width=True)
 
     if submitted:
@@ -119,6 +121,7 @@ def show_cadastro():
                 "quantidade": quantidade,
                 "unidade": unidade,
                 "validade": str(validade),
+                "localizacao": localizacao,
                 "lote": "",            
                 "fornecedor": info.get("fornecedor", ""),
                 "criado_por": st.session_state.get("username", "admin")
