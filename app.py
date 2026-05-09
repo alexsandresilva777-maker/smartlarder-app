@@ -24,6 +24,54 @@ st.markdown("""
     .block-container {padding-top: 1rem !important;}
 </style>
 """, unsafe_allow_html=True)
+import streamlit.components.v1 as components
+
+# Configuração para transformar em PWA (App)
+def add_pwa_support():
+    pwa_code = """
+    <link rel="manifest" href="https://raw.githubusercontent.com/seu-usuario/seu-repo/main/manifest.json">
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('https://raw.githubusercontent.com/seu-usuario/seu-repo/main/sw.js');
+        });
+      }
+    </script>
+    """
+    # Truque para injetar metatags de tela cheia no Streamlit
+    st.markdown(
+        f"""
+        <style>
+        @media all {{
+            .stApp {{
+                padding-bottom: 50px;
+            }}
+        }}
+        </style>
+        <script>
+            var meta = document.createElement('meta');
+            meta.name = "viewport";
+            meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+            document.getElementsByTagName('head')[0].appendChild(meta);
+            
+            var metaApple = document.createElement('meta');
+            metaApple.name = "apple-mobile-web-app-capable";
+            metaApple.content = "yes";
+            document.getElementsByTagName('head')[0].appendChild(metaApple);
+            
+            var metaStatus = document.createElement('meta');
+            metaStatus.name = "apple-mobile-web-app-status-bar-style";
+            metaStatus.content = "black-translucent";
+            document.getElementsByTagName('head')[0].appendChild(metaStatus);
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+    # Ativa o suporte ao App
+add_pwa_support()
+
+# Chame a função logo no início do app
+add_pwa_support()
 
 def main():
     from utils.database import init_db, check_alerts
