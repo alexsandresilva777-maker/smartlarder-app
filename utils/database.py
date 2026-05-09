@@ -6,6 +6,7 @@ Banco SQLite com multi-tenant, migração segura, cache EAN e conexão robusta.
 import sqlite3
 import hashlib
 import os
+import streamlit as st
 from datetime import date, datetime, timedelta
 import pytz
 from supabase import create_client, Client
