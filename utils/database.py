@@ -8,6 +8,15 @@ import hashlib
 import os
 from datetime import date, datetime, timedelta
 import pytz
+from supabase import create_client, Client
+
+# Conexão com o Supabase usando os Secrets do Streamlit
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error("Erro ao carregar credenciais do Supabase nos Secrets.")
 
 _TZ     = pytz.timezone("America/Sao_Paulo")
 _BASE   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -267,39 +276,42 @@ def get_stats(user_id: int) -> dict:
 def listar_produtos(user_id: int, filtro_nome="", filtro_categoria="", filtro_status="") -> list[dict]:
     conn = get_conn()
     try:
-        q, p = "SELECT * FROM produtos WHERE user_id=?", [user_id]
+        # Busca no Supabase em vez do SQLite local
+        query = supabase.table("produtos").select("*").eq("user_id", user_id)
+        
         if filtro_nome:
-            q += " AND (nome LIKE ? OR codigo_barras LIKE ?)"; p += [f"%{filtro_nome}%"]*2
+            query = query.ilike("nome", f"%{filtro_nome}%")
         if filtro_categoria and filtro_categoria != "Todas":
-            q += " AND categoria=?"; p.append(filtro_categoria)
-        q += " ORDER BY validade ASC"
-        rows = conn.execute(q, p).fetchall()
-        produtos = _enriquecer(rows)
+            query = query.eq("categoria", filtro_categoria)
+            
+        response = query.order("validade", desc=False).execute()
+        produtos = _enriquecer(response.data)
+        
         if filtro_status and filtro_status != "Todos":
             mapa = {"Vencido":"vencido","Crítico (≤7d)":"critico","Atenção (≤30d)":"atencao","OK":"ok"}
             s = mapa.get(filtro_status,"")
             produtos = [x for x in produtos if x["status"]==s]
         return produtos
-    finally:
-        conn.close()
+    except Exception as e:
+        st.error(f"Erro ao listar produtos do Supabase: {e}")
+        return []
 
 
 def inserir_produto(dados: dict, user_id: int, usuario: str) -> int:
     conn = get_conn()
     try:
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO produtos (user_id,codigo_barras,nome,categoria,quantidade,unidade,validade,
-              lote,fornecedor,localizacao,preco_custo,estoque_minimo,observacoes,criado_por)
-            VALUES (:user_id,:codigo_barras,:nome,:categoria,:quantidade,:unidade,:validade,
-              :lote,:fornecedor,:localizacao,:preco_custo,:estoque_minimo,:observacoes,:criado_por)
-        """, {**dados,"user_id":user_id,"criado_por":usuario})
-        new_id = c.lastrowid
-        conn.commit()
-        return new_id
-    finally:
-        conn.close()
-
+        # Prepara o dicionário para a nuvem
+        dados_envio = {**dados, "user_id": user_id, "criado_por": usuario}
+        
+        # Insere no Supabase
+        response = supabase.table("produtos").insert(dados_envio).execute()
+        
+        if response.data:
+            return response.data[0]['id']
+        return 0
+    except Exception as e:
+        st.error(f"Erro ao salvar produto no Supabase: {e}")
+        return 0
 
 def atualizar_produto(produto_id: int, user_id: int, dados: dict):
     conn = get_conn()
