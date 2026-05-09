@@ -12,12 +12,12 @@ import pytz
 from supabase import create_client, Client
 
 # Conexão com o Supabase usando os Secrets do Streamlit
-try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    st.error("Erro ao carregar credenciais do Supabase nos Secrets.")
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+# Criamos a conexão fora do try para garantir que o objeto exista
+# ou que o Streamlit mostre o erro real de conexão se algo falhar
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 _TZ     = pytz.timezone("America/Sao_Paulo")
 _BASE   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
