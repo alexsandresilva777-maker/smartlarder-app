@@ -32,15 +32,19 @@ def show_login():
                 return
             user = verificar_login(username.strip(), senha)
             if user:
-                # Armazena user_id na sessão — controle de acesso multi-tenant
                 st.session_state.logged_in     = True
                 st.session_state.user_id       = user["id"]
                 st.session_state.username      = user["username"]
                 st.session_state.nome_completo = user["nome"]
-                st.session_state.role          = user["role"]
-                st.session_state.empresa_id = user["empresa_id"]
-                st.session_state.alerts        = {}   # força check_alerts no próximo ciclo
+                st.session_state.role          = user.get("role", "admin")
+                st.session_state.empresa_id    = user.get("empresa_id", 1)
+                st.session_state.alerts        = {}
                 st.session_state.batch_list    = []
+
+                # ← NOVO: salva sessão no cookie para sobreviver ao restart
+                from app import _salvar_sessao_no_cookie
+                _salvar_sessao_no_cookie(user)
+
                 st.rerun()
             else:
                 st.error("Credenciais inválidas ou conta inativa.")
