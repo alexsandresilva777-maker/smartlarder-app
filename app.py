@@ -90,7 +90,92 @@ def add_pwa_support():
 
 # Ativa o suporte ao App
 add_pwa_support()
+# ── Funções de persistência de sessão ─────────────────────────────────────────
 
+def _salvar_sessao_no_cookie(user: dict):
+    """
+    Salva dados mínimos no cookie após login bem-sucedido.
+    NUNCA salva a senha — apenas um token derivado do hash da senha.
+    """
+    try:
+        cookies["sl_user_id"]    = str(user.get("id", ""))
+        cookies["sl_username"]   = str(user.get("username", ""))
+        cookies["sl_nome"]       = str(user.get("nome", ""))
+        cookies["sl_role"]       = str(user.get("role", "domestico"))
+        cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
+        # Token de verificação: hash do senha_hash — não é a senha, é o hash do hash
+        cookies["sl_token"]      = hashlib.sha256(
+            user.get("senha_hash", "").encode()
+        ).hexdigest()[:16]
+        cookies.save()
+    except Exception as e:
+        pass  # Cookie falhou — sessão ainda funciona normalmente
+
+
+def _restaurar_sessao_do_cookie():
+    """
+    Tenta restaurar a sessão a partir do cookie salvo no navegador.
+    Valida o token contra o banco antes de aceitar.
+    """
+    try:
+        user_id    = cookies.get("sl_user_id", "")
+        username   = cookies.get("sl_username", "")
+        token      = cookies.get("sl_token", "")
+        empresa_id = cookies.get("sl_empresa_id", "1")
+        role       = cookies.get("sl_role", "domestico")
+        nome       = cookies.get("sl_nome", "")
+
+        if not user_id or not username or not token:
+            return  # Sem cookie — vai para login normal
+
+        # Valida token contra o banco (sem re-digitar senha)
+        from utils.database import get_conn
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM usuarios WHERE id=? AND username=? AND ativo=1",
+                (int(user_id), username)
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            _limpar_cookie()
+            return
+
+        # Verifica se o token bate com o hash da senha armazenada
+        token_esperado = hashlib.sha256(
+            row["senha_hash"].encode()
+        ).hexdigest()[:16]
+
+        if token != token_esperado:
+            _limpar_cookie()  # Token inválido — senha foi trocada
+            return
+
+        # ✅ Cookie válido — restaura sessão sem pedir login
+        st.session_state.logged_in     = True
+        st.session_state.user_id       = int(user_id)
+        st.session_state.username      = username
+        st.session_state.nome_completo = nome
+        st.session_state.role          = role
+        st.session_state.empresa_id    = int(empresa_id)
+        st.session_state.alerts        = {}
+        st.session_state.batch_list    = []
+
+    except Exception:
+        _limpar_cookie()
+
+
+def _limpar_cookie():
+    """Remove todos os cookies de sessão."""
+    try:
+        for key in ["sl_user_id","sl_username","sl_nome",
+                    "sl_role","sl_empresa_id","sl_token"]:
+            if key in cookies:
+                cookies[key] = ""
+        cookies.save()
+    except Exception:
+        pass
 def main():
     from utils.database import init_db, check_alerts
 
@@ -115,8 +200,14 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # BLOQUEIO DE SEGURANÇA (Essencial para SaaS)
-    if not st.session_state.logged_in or st.session_state.user_id is None or st.session_state.empresa_id is None:
+   # ── Restaura sessão do cookie se session_state foi limpo ──────────────────
+    if not st.session_state.get("logged_in"):
+        _restaurar_sessao_do_cookie()
+
+    # ── Bloco de segurança ────────────────────────────────────────────────────
+    if not st.session_state.get("logged_in") \
+       or st.session_state.get("user_id") is None \
+       or st.session_state.get("empresa_id") is None:
         from telas.login import show_login
         show_login()
         st.stop()
