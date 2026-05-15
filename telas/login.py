@@ -1,13 +1,17 @@
 import streamlit as st
 from supabase import create_client
+import hashlib
 
 def _get_supabase_client():
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
+def _converter_para_sha256(texto):
+    return hashlib.sha256(texto.encode('utf-8')).hexdigest()
+
 def show_login():
-    st.title("🔐 Acesso ao SmartLarder Pro (Master Key Ativa)")
+    st.title("🔐 Acesso ao SmartLarder Pro")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -22,45 +26,30 @@ def show_login():
                 st.error("Por favor, preencha todos os campos.")
                 return
 
-            # ── PORTA DE ACESSO DIRETA (Ignora falhas do banco para te logar) ──
-            if usuario_digitado.lower() == "alex" and senha_digitada == "Naty21":
-                st.session_state.logged_in = True
-                st.session_state.user_id = 1
-                st.session_state.user_name = "Alex"  
-                st.session_state.empresa_id = 1 
-                st.session_state.batch_list = []
-                st.session_state.deve_salvar_cookie = True
-                
-                st.success("Acesso master concedido!")
-                st.rerun()
-                return
-            # ──────────────────────────────────────────────────────────────────
-            
             try:
-                # Se digitar outra coisa, tenta o fluxo normal
                 supabase = _get_supabase_client()
-                resposta = supabase.table("usuarios").select("*").execute()
+                login_busca = usuario_digitado.lower()
                 
-                user = None
-                if resposta.data:
-                    for u in resposta.data:
-                        if str(u.get("username", "")).lower() == usuario_digitado.lower():
-                            user = u
-                            break
-                            
-                if user is not None:
-                    # Fallback simples de string limpa
-                    if str(user.get("senha_hash")) == senha_digitada or senha_digitada == "admin123":
+                # Busca direta buscando o username digitado
+                resposta = supabase.table("usuarios").select("*").eq("username", login_busca).execute()
+                
+                if resposta.data and len(resposta.data) > 0:
+                    user = resposta.data[0]
+                    senha_hash_digitada = _converter_para_sha256(senha_digitada)
+                    
+                    # Compara o hash gerado com o que está gravado no Supabase
+                    if user.get("senha_hash") == senha_hash_digitada:
                         st.session_state.logged_in = True
                         st.session_state.user_id = user["id"]
                         st.session_state.user_name = user["nome"]  
-                        st.session_state.empresa_id = user["empresa_id"] 
+                        st.session_state.empresa_id = user["empresa_id"]
                         st.session_state.batch_list = []
-                        st.session_state.deve_salvar_cookie = True
+                        
+                        st.success(f"Bem-vindo, {user['nome']}!")
                         st.rerun()
                     else:
-                        st.error("Senha incorreta.")
+                        st.error("Senha incorreta. Tente novamente.")
                 else:
                     st.error("Usuário não encontrado.")
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro de comunicação: {e}")
