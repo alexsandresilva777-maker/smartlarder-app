@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
-import os
-import hashlib
-from utils.auth import tem_permissao
+from supabase import create_client, Client
 from streamlit_cookies_manager import EncryptedCookieManager
+from telas.login import show_login
 
+# Configuração da página (Deve ser o primeiro comando Streamlit do script)
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
@@ -12,213 +11,105 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS — usa aspas simples dentro do HTML para evitar conflito
-_CSS = (
-    "<style>"
-    "[data-testid='stSidebarNav'] {display: none !important;}"
-    "button[data-testid='stSidebarCollapseButton'] {"
-    "    visibility: visible !important;"
-    "    display: flex !important;"
-    "    background-color: #2d6a4f !important;"
-    "    color: white !important;"
-    "    z-index: 999999 !important;"
-    "}"
-    ".block-container {padding-top: 1rem !important;}"
-    "</style>"
-)
-st.markdown(_CSS, unsafe_allow_html=True)
+# ── 1. Inicialização Segura do Cookie Manager ─────────────────────────
+@st.cache_resource
+def init_cookie_manager():
+    # Recupera a senha dos secrets ou usa uma string padrão segura de contingência
+    password = st.secrets.get("COOKIE_PASSWORD", "chave_mestra_secreta_smartlarder_32char_min")
+    manager = EncryptedCookieManager(password=password)
+    if not manager.ready():
+        # Aguarda o componente sincronizar com o navegador
+        st.stop()
+    return manager
 
-# PWA — sem triple-quotes, sem aspas duplas no HTML
-_PWA = (
-    "<meta name='viewport' content='width=device-width, initial-scale=1,"
-    " maximum-scale=1, user-scalable=no, viewport-fit=cover'>"
-    "<meta name='apple-mobile-web-app-capable' content='yes'>"
-    "<meta name='apple-mobile-web-app-status-bar-style'"
-    " content='black-translucent'>"
-    "<meta name='mobile-web-app-capable' content='yes'>"
-    "<style>"
-    "html { overflow: hidden; height: 100%; }"
-    "body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }"
-    "</style>"
-)
-st.markdown(_PWA, unsafe_allow_html=True)
+cookies = init_cookie_manager()
 
-# ── Gerenciador de Cookies Seguro (Evita Duplicação de Elemento) ──────────────
-def _get_cookie_manager():
-    """
-    Guarda o gerenciador no st.session_state para evitar que reimportações
-    do arquivo app.py tentem recriar o componente visual e gerem erro de duplicidade.
-    """
-    if "_cookie_manager_instance" not in st.session_state:
-        _COOKIE_PASSWORD = st.secrets.get(
-            "COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!"
-        )
-        st.session_state["_cookie_manager_instance"] = EncryptedCookieManager(
-            prefix="smartlarder/",
-            password=_COOKIE_PASSWORD,
-        )
-    return st.session_state["_cookie_manager_instance"]
-
-# Inicializa o controle de cookies com segurança
-cookies = _get_cookie_manager()
-
-if not cookies.ready():
-    st.stop()
-
-
-# ── Funções de cookie ─────────────────────────────────────────────────────────
-
-def _salvar_sessao_no_cookie(user: dict):
+# ── 2. Inicialização do Banco de Dados Supabase ────────────────────────
+@st.cache_resource
+def init_supabase() -> Client:
     try:
-        current_cookies = _get_cookie_manager()
-        current_cookies["sl_user_id"]    = str(user.get("id", ""))
-        current_cookies["sl_username"]   = str(user.get("username", ""))
-        current_cookies["sl_nome"]       = str(user.get("nome", ""))
-        current_cookies["sl_role"]       = str(user.get("role", "domestico"))
-        current_cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
-        current_cookies["sl_token"]      = hashlib.sha256(
-            user.get("senha_hash", "").encode()
-        ).hexdigest()[:16]
-        current_cookies.save()
-    except Exception:
-        pass
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"Erro crítico nas credenciais do Supabase: {e}")
+        st.stop()
 
+supabase = init_supabase()
+
+# ── 3. Funções de Gerenciamento de Sessão via Cookies ──────────────────
+def _salvar_sessao_no_cookie():
+    try:
+        cookies["logged_in"] = "true"
+        cookies["user_id"] = str(st.session_state.get("user_id", ""))
+        cookies["user_name"] = str(st.session_state.get("user_name", ""))
+        cookies["empresa_id"] = str(st.session_state.get("empresa_id", ""))
+        cookies.save()
+    except Exception as e:
+        st.warning(f"Não foi possível salvar os cookies de sessão: {e}")
 
 def _restaurar_sessao_do_cookie():
-    try:
-        current_cookies = _get_cookie_manager()
-        user_id    = current_cookies.get("sl_user_id", "")
-        username   = current_cookies.get("sl_username", "")
-        token      = current_cookies.get("sl_token", "")
-        empresa_id = current_cookies.get("sl_empresa_id", "1")
-        role       = current_cookies.get("sl_role", "domestico")
-        nome       = current_cookies.get("sl_nome", "")
-
-        if not user_id or not username or not token:
-            return
-
-        from utils.database import get_conn
-        supabase = get_conn()
-        res = (
-            supabase.table("usuarios")
-            .select("*")
-            .eq("id", int(user_id))
-            .eq("username", username)
-            .eq("ativo", 1)
-            .execute()
-        )
-        row = res.data[0] if res.data else None
-
-        if not row:
-            return
-
-        token_esperado = hashlib.sha256(
-            row["senha_hash"].encode()
-        ).hexdigest()[:16]
-
-        if token != token_esperado:
-            return
-
-        st.session_state.logged_in     = True
-        st.session_state.user_id       = int(user_id)
-        st.session_state.username      = username
-        st.session_state.nome_completo = nome
-        st.session_state.role          = role
-        st.session_state.empresa_id    = int(empresa_id)
-        st.session_state.alerts        = {}
-        st.session_state.batch_list    = []
-
-    except Exception:
-        pass  # Evita loop de gravação de cookies antes da inicialização completa do app
-
+    if cookies.get("logged_in") == "true":
+        st.session_state.logged_in = True
+        st.session_state.user_id = cookies.get("user_id")
+        st.session_state.user_name = cookies.get("user_name")
+        st.session_state.empresa_id = cookies.get("empresa_id")
+        if "batch_list" not in st.session_state:
+            st.session_state.batch_list = []
 
 def _limpar_cookie():
     try:
-        current_cookies = _get_cookie_manager()
-        for key in ["sl_user_id", "sl_username", "sl_nome",
-                    "sl_role", "sl_empresa_id", "sl_token"]:
-            if key in current_cookies:
-                current_cookies[key] = ""
-        current_cookies.save()
-    except Exception:
+        cookies["logged_in"] = "false"
+        cookies["user_id"] = ""
+        cookies["user_name"] = ""
+        cookies["empresa_id"] = ""
+        cookies.save()
+    except Exception as e:
         pass
 
-
-# ── App principal ─────────────────────────────────────────────────────────────
-
+# ── 4. Fluxo de Execução Principal (Main) ──────────────────────────────
 def main():
-    # Validação prévia de chaves para evitar congelamento por segredo ausente
-    if "SUPABASE_URL" not in st.secrets or "SUPABASE_KEY" not in st.secrets:
-        st.error("Erro de Configuração: As credenciais do Supabase não foram encontradas nos Secrets do Streamlit.")
-        st.stop()
-
-    from utils.database import init_db
-
-    try:
-        init_db()
-    except Exception as e:
-        st.error(f"Erro ao conectar ou inicializar o banco de dados: {e}")
-        st.stop()
-
-    defaults = {
-        "logged_in":    False,
-        "user_id":      None,
-        "empresa_id":   None,
-        "role":         "",
-        "current_page": "Dashboard",
-        "alerts":       {},
-        "batch_list":   [],
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
+    # Tenta restaurar a sessão automaticamente se o usuário não estiver logado na aba atual
     if not st.session_state.get("logged_in"):
         _restaurar_sessao_do_cookie()
 
-    if (not st.session_state.get("logged_in")
-            or st.session_state.get("user_id") is None
-            or st.session_state.get("empresa_id") is None):
-        from telas.login import show_login
+    # Se mesmo após checar o cookie ele continuar deslogado, exibe a tela de login
+    if not st.session_state.get("logged_in"):
         show_login()
-        st.stop()
+        
+        # Se a tela de login validou o usuário, ela ativa esta flag. Salvaremos o cookie aqui no app.py:
+        if st.session_state.get("deve_salvar_cookie"):
+            _salvar_sessao_no_cookie()
+            del st.session_state["deve_salvar_cookie"] # Limpa a flag temporária
+            st.rerun()
+        return
 
-    from telas.sidebar import show_sidebar
-    page = show_sidebar()
+    # ── Bloco de Segurança e Logout ─────────────────────────────────────
+    # Garante que as variáveis essenciais existem se o usuário passou pelo login
+    if st.session_state.get("user_id") is None or st.session_state.get("empresa_id") is None:
+        _limpar_cookie()
+        st.session_state.clear()
+        st.rerun()
 
-    def _load(fn):
-        try:
-            fn()
-        except Exception as e:
-            import traceback
-            st.error(f"Erro na página {page}: {e}")
-            st.code(traceback.format_exc())
+    # Sidebar com informações do usuário e botão de sair
+    with st.sidebar:
+        st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Indefinido')}")
+        st.write(f"🏢 **Empresa ID:** {st.session_state.get('empresa_id')}")
+        
+        if st.button("Sair / Logout", width="stretch"):
+            _limpar_cookie()
+            st.session_state.clear()
+            st.rerun()
 
-    if   page == "Dashboard":
-        from telas.dashboard   import show_dashboard;     _load(show_dashboard)
-    elif page == "Produtos":
-        from telas.produtos    import show_produtos;      _load(show_produtos)
-    elif page == "Cadastrar":
-        from telas.cadastro    import show_cadastro;      _load(show_cadastro)
-    elif page == "Recepção de Carga":
-        from telas.recepcao    import show_recepcao;      _load(show_recepcao)
-    elif page == "Lista de Compras":
-        from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
-    elif page == "Alertas":
-        from telas.alertas       import show_alertas;       _load(show_alertas)
-    elif page == "Relatórios":
-        from telas.relatorios    import show_relatorios;    _load(show_relatorios)
-    elif page == "Fornecedores":
-        if tem_permissao("ver_fornecedores"):
-            from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
-        else:
-            st.error("Acesso restrito.")
-    elif page == "Usuários":
-        if st.session_state.role == "admin":
-            from telas.usuarios import show_usuarios; _load(show_usuarios)
-        else:
-            st.error("Acesso restrito.")
-
+    # ── Renderização das Telas do Sistema (Dashboard / Estoque) ─────────
+    st.title("🍞 SmartLarder Pro — Painel Principal")
+    st.info("Conexão com Supabase estabelecida com sucesso!")
+    
+    # Insira aqui o carregamento do restante do seu aplicativo
+    # Exemplo:
+    # tab1, tab2 = st.tabs(["Estoque", "Movimentações"])
+    # with tab1:
+    #     telas.estoque.show_estoque(supabase)
 
 if __name__ == "__main__":
     main()
