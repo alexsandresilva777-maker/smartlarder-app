@@ -11,8 +11,24 @@ def _converter_para_sha256(texto):
     return hashlib.sha256(texto.encode('utf-8')).hexdigest()
 
 def show_login():
-    st.title("🔐 Acesso ao SmartLarder Pro")
+    st.title("🔐 Acesso ao SmartLarder Pro (Modo Diagnóstico)")
     
+    # ── BLOCO DE DIAGNÓSTICO EM TEMPO REAL ──
+    try:
+        supabase = _get_supabase_client()
+        resposta = supabase.table("usuarios").select("*").execute()
+        
+        st.info("🔍 **Diagnóstico de Conexão:**")
+        if resposta.data:
+            st.write(f"O aplicativo encontrou **{len(resposta.data)}** usuário(s) na tabela.")
+            for u in resposta.data:
+                st.warning(f"• Usuário registrado no Banco: `{u.get('username')}` | ID: `{u.get('id')}`")
+        else:
+            st.error("❌ A tabela 'usuarios' retornou VAZIA para o aplicativo. Verifique se os Secrets estão certos.")
+    except Exception as e:
+        st.error(f"❌ Erro ao conectar na tabela: {e}")
+    # ────────────────────────────────────────
+
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -27,12 +43,7 @@ def show_login():
                 return
 
             try:
-                supabase = _get_supabase_client()
                 login_busca = usuario_digitado.lower()
-                
-                # Busca os dados brutos da tabela
-                resposta = supabase.table("usuarios").select("*").execute()
-                
                 user = None
                 if resposta.data:
                     for u in resposta.data:
@@ -41,25 +52,19 @@ def show_login():
                             break
                 
                 if user is not None:
-                    # Gera o hash da senha digitada
                     senha_hash_digitada = _converter_para_sha256(senha_digitada)
-                    
-                    # FALLBACK TOTAL: Aceita se bater o hash SHA-256 OU se a senha digitada for igual ao texto salvo no banco
                     if user.get("senha_hash") == senha_hash_digitada or user.get("senha_hash") == senha_digitada:
-                        
                         st.session_state.logged_in = True
                         st.session_state.user_id = user["id"]
                         st.session_state.user_name = user["nome"]  
                         st.session_state.empresa_id = user["empresa_id"] 
                         st.session_state.batch_list = []
                         st.session_state.deve_salvar_cookie = True
-                        
                         st.success(f"Bem-vindo de volta, {user['nome']}!")
                         st.rerun()
                     else:
                         st.error("Senha incorreta. Tente novamente.")
                 else:
                     st.error("Usuário não encontrado.")
-                    
             except Exception as e:
-                st.error(f"Erro na comunicação com o banco: {e}")
+                st.error(f"Erro: {e}")
