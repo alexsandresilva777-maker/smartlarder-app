@@ -17,8 +17,7 @@ def show_login():
     
     with col2:
         with st.form("login_form", clear_on_submit=False):
-            # Campo simples para o usuário digitar
-            usuario_digitado = st.text_input("Usuário ou E-mail").strip()
+            usuario_digitado = st.text_input("Usuário").strip()
             senha_digitada = st.text_input("Senha", type="password")
             botao_login = st.form_submit_button("Entrar", width="stretch")
             
@@ -29,28 +28,24 @@ def show_login():
 
             try:
                 supabase = _get_supabase_client()
-                
-                # Forçamos a busca transformando o texto em minúsculas para evitar erros de digitação
                 login_busca = usuario_digitado.lower()
                 
-                # Busca direta na tabela usuarios
+                # Busca os dados brutos da tabela
                 resposta = supabase.table("usuarios").select("*").execute()
                 
-                # Procuramos o usuário manualmente na lista retornada para evitar que filtros do banco deem "Não encontrado"
                 user = None
                 if resposta.data:
                     for u in resposta.data:
-                        # Testamos tanto contra a coluna 'username' quanto contra o 'nome' ou 'id' para garantir o login antigo
-                        if str(u.get("username", "")).lower() == login_busca or str(u.get("nome", "")).lower() == login_busca:
+                        if str(u.get("username", "")).lower() == login_busca:
                             user = u
                             break
                 
                 if user is not None:
-                    # Geramos o hash da senha digitada
+                    # Gera o hash da senha digitada
                     senha_hash_digitada = _converter_para_sha256(senha_digitada)
                     
-                    # Verificação dupla: aceita tanto se a senha estiver em hash quanto se tiver ficado em texto limpo no banco (como o login antigo)
-                    if user.get("senha_hash") == senha_hash_digitada or user.get("senha_hash") == senha_digitada or user.get("senha") == senha_digitada:
+                    # FALLBACK TOTAL: Aceita se bater o hash SHA-256 OU se a senha digitada for igual ao texto salvo no banco
+                    if user.get("senha_hash") == senha_hash_digitada or user.get("senha_hash") == senha_digitada:
                         
                         st.session_state.logged_in = True
                         st.session_state.user_id = user["id"]
@@ -64,7 +59,7 @@ def show_login():
                     else:
                         st.error("Senha incorreta. Tente novamente.")
                 else:
-                    st.error("Usuário não encontrado no sistema.")
+                    st.error("Usuário não encontrado.")
                     
             except Exception as e:
                 st.error(f"Erro na comunicação com o banco: {e}")
