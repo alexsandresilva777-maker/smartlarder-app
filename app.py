@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 from utils.auth import tem_permissao
+import os
+import hashlib
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # -- Configuração da página --
+# (DEVE ser o primeiro comando Streamlit executado)
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
@@ -24,7 +28,23 @@ st.markdown("""
     .block-container {padding-top: 1rem !important;}
 </style>
 """, unsafe_allow_html=True)
+
 import streamlit.components.v1 as components
+
+# ── Persistência de sessão via cookie (INSERIDO AQUI) ─────────────────────────
+_COOKIE_PREFIX  = "smartlarder/"
+_COOKIE_PASSWORD = os.environ.get("COOKIES_PASSWORD", "smartlarder-secret-key-mude-isso")
+
+# Instanciado no nível do módulo, fora de main()
+cookies = EncryptedCookieManager(
+    prefix=_COOKIE_PREFIX,
+    password=_COOKIE_PASSWORD,
+)
+
+if not cookies.ready():
+    # Aguarda o componente carregar os cookies do navegador
+    st.stop()
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Configuração para transformar em PWA (App)
 def add_pwa_support():
@@ -67,10 +87,8 @@ def add_pwa_support():
         """,
         unsafe_allow_html=True
     )
-    # Ativa o suporte ao App
-add_pwa_support()
 
-# Chame a função logo no início do app
+# Ativa o suporte ao App
 add_pwa_support()
 
 def main():
@@ -84,7 +102,6 @@ def main():
         st.stop()
 
     # -- Estado de sessão --
-    # Cada linha abaixo DEVE ter exatamente 4 espaços de recuo
     defaults = {
         "logged_in": False,
         "user_id": None,
