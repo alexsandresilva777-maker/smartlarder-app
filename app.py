@@ -5,7 +5,6 @@ import os
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
 
-# ── 1. Configuração da página (OBRIGATORIAMENTE O PRIMEIRO COMANDO) ──────────
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
@@ -13,7 +12,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── 2. CSS Interno ───────────────────────────────────────────────────────────
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] {display: none !important;}
@@ -28,50 +26,34 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-import streamlit.components.v1 as components
+_COOKIE_PREFIX   = "smartlarder/"
+_COOKIE_PASSWORD = st.secrets.get("COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!")
 
-# ── 3. Persistência de sessão via cookie ─────────────────────────────────────
-_COOKIE_PREFIX  = "smartlarder/"
-# Tenta buscar dos Secrets, se não achar usa a senha padrão de contingência
-_COOKIE_PASSWORD = st.secrets.get("COOKIES_PASSWORD", "smartlarder-secret-key-mude-isso-32char")
-
-# Instanciado no nível do módulo, fora de main()
 cookies = EncryptedCookieManager(
     prefix=_COOKIE_PREFIX,
     password=_COOKIE_PASSWORD,
 )
 
 if not cookies.ready():
-    # Aguarda o componente carregar os cookies do navegador
     st.stop()
 
-# ── 4. Funções de persistência de sessão ─────────────────────────────────────
 
 def _salvar_sessao_no_cookie(user: dict):
-    """
-    Salva dados mínimos no cookie após login bem-sucedido.
-    NUNCA salva a senha — apenas um token derivado do hash da senha.
-    """
     try:
         cookies["sl_user_id"]    = str(user.get("id", ""))
         cookies["sl_username"]   = str(user.get("username", ""))
         cookies["sl_nome"]       = str(user.get("nome", ""))
         cookies["sl_role"]       = str(user.get("role", "domestico"))
         cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
-        # Token de verificação: hash do senha_hash — não é a senha, é o hash do hash
         cookies["sl_token"]      = hashlib.sha256(
             user.get("senha_hash", "").encode()
         ).hexdigest()[:16]
         cookies.save()
     except Exception:
-        pass  # Se o cookie falhar, a sessão em memória ainda funcionará normalmente
+        pass
 
 
 def _restaurar_sessao_do_cookie():
-    """
-    Tenta restaurar a sessão a partir do cookie salvo no navegador.
-    Valida o token contra o banco do Supabase antes de aceitar.
-    """
     try:
         user_id    = cookies.get("sl_user_id", "")
         username   = cookies.get("sl_username", "")
@@ -81,29 +63,29 @@ def _restaurar_sessao_do_cookie():
         nome       = cookies.get("sl_nome", "")
 
         if not user_id or not username or not token:
-            return  # Sem cookie — segue para a tela de login normal
+            return
 
-        # Corrigido: Busca e validação feita direto no Supabase (Nuvem permanente)
         from utils.database import get_conn
         supabase = get_conn()
-        
-        res = supabase.table("usuarios").select("*").eq("id", int(user_id)).eq("username", username).eq("ativo", 1).execute()
+        res = supabase.table("usuarios").select("*") \
+            .eq("id", int(user_id)) \
+            .eq("username", username) \
+            .eq("ativo", 1) \
+            .execute()
         row = res.data[0] if res.data else None
 
         if not row:
             _limpar_cookie()
             return
 
-        # Verifica se o token bate com o hash da senha armazenada
         token_esperado = hashlib.sha256(
             row["senha_hash"].encode()
         ).hexdigest()[:16]
 
         if token != token_esperado:
-            _limpar_cookie()  # Token inválido — a senha foi alterada em outro dispositivo
+            _limpar_cookie()
             return
 
-        # ✅ Cookie válido — restaura sessão sem pedir credenciais novamente
         st.session_state.logged_in     = True
         st.session_state.user_id       = int(user_id)
         st.session_state.username      = username
@@ -118,7 +100,6 @@ def _restaurar_sessao_do_cookie():
 
 
 def _limpar_cookie():
-    """Remove todos os cookies de sessão no logout."""
     try:
         for key in ["sl_user_id", "sl_username", "sl_nome",
                     "sl_role", "sl_empresa_id", "sl_token"]:
@@ -128,94 +109,17 @@ def _limpar_cookie():
     except Exception:
         pass
 
-# ── 5. Suporte Corrigido para PWA (Mobile iOS/Android) ──────────────────────
+
 def add_pwa_support():
-    # Versão otimizada que injeta as metatags e corrige a rolagem/bounce no iOS
     st.markdown("""
-        <meta name="viewport" 
-              content="width=device-width, initial-scale=1, 
-                       maximum-scale=1, user-scalable=no, 
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1,
+                       maximum-scale=1, user-scalable=no,
                        viewport-fit=cover">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" 
+        <meta name="apple-mobile-web-app-status-bar-style"
               content="black-translucent">
         <meta name="mobile-web-app-capable" content="yes">
         <style>
-          /* Evita o comportamento de recarregamento indesejado no PWA do iOS */
           html { overflow: hidden; height: 100%; }
-          body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }
-        </style>
-    """, unsafe_allow_html=True)
-
-# Ativa o suporte ao App (Chamada única, sem duplicados)
-add_pwa_support()
-
-# ── 6. Execução Principal do Aplicativo ──────────────────────────────────────
-def main():
-    from utils.database import init_db
-
-    # Inicializa o Banco (Executa a função de compatibilidade vazia do Supabase)
-    try:
-        init_db()
-    except Exception as e:
-        st.error(f"Erro no banco: {e}")
-        st.stop()
-
-    # -- Estado de sessão padrão --
-    defaults = {
-        "logged_in": False,
-        "user_id": None,
-        "empresa_id": None,
-        "role": "",
-        "current_page": "Dashboard",
-        "alerts": {}
-    }
-    
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-    # ── Restaura sessão do cookie se session_state foi limpo pelo timeout ─────
-    if not st.session_state.get("logged_in"):
-        _restaurar_sessao_do_cookie()
-
-    # ── Bloco de segurança estruturado ────────────────────────────────────────
-    if not st.session_state.get("logged_in") \
-       or st.session_state.get("user_id") is None \
-       or st.session_state.get("empresa_id") is None:
-        from telas.login import show_login
-        show_login()
-        st.stop()
-
-    # -- Interface e Navegação lateral --
-    from telas.sidebar import show_sidebar
-    page = show_sidebar()
-
-    def _load(fn):
-        try:
-            fn()
-        except Exception as e:
-            st.error(f"Erro na página {page}: {e}")
-
-    # Roteamento Centralizado das Telas
-    if page == "Dashboard":
-        from telas.dashboard import show_dashboard; _load(show_dashboard)
-    elif page == "Produtos":
-        from telas.produtos import show_produtos; _load(show_produtos)
-    elif page == "Cadastrar":
-        from telas.cadastro import show_cadastro; _load(show_cadastro)
-    elif page == "Recepção de Carga":
-        from telas.recepcao import show_recepcao; _load(show_recepcao)
-    elif page == "Lista de Compras":
-        from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
-    elif page == "Alertas":
-        from telas.alertas import show_alertas; _load(show_alertas)
-    elif page == "Relatórios":
-        from telas.relatorios import show_relatorios; _load(show_relatorios)
-    elif page == "Fornecedores":
-        if tem_permissao("ver_fornecedores"):
-            from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
-        else:
-            st.error("Acesso restrito.")
-    elif page == "Usuários":
-        if st.session_state
+          body { height: 100%; overflow: auto; -webkit-overflow-sc
