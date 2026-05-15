@@ -1,10 +1,15 @@
 import streamlit as st
 from supabase import create_client
+import hashlib
 
 def _get_supabase_client():
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
+
+def _converter_para_sha256(texto):
+    """Transforma a senha digitada no mesmo formato criptografado do Supabase"""
+    return hashlib.sha256(texto.encode('utf-8')).hexdigest()
 
 def show_login():
     st.title("🔐 Acesso ao SmartLarder Pro")
@@ -14,7 +19,6 @@ def show_login():
     
     with col2:
         with st.form("login_form", clear_on_submit=False):
-            # O label continua "Usuário", mas o input vai pesquisar na coluna 'username'
             email = st.text_input("Usuário", placeholder="Digite seu usuário (ex: alex)").strip()
             senha = st.text_input("Senha", type="password", placeholder="Sua senha secreta")
             botao_login = st.form_submit_button("Entrar", width="stretch")
@@ -27,21 +31,22 @@ def show_login():
             try:
                 supabase = _get_supabase_client()
                 
-                # BUSCA CORRETA: Filtrando pela coluna 'username' obtida da imagem do Supabase
+                # Busca o usuário na coluna 'username' (conforme a imagem)
                 resposta = supabase.table("usuarios").select("*").eq("username", email).execute()
                 
                 if resposta.data and len(resposta.data) > 0:
                     user = resposta.data[0]
                     
-                    # VALIDAÇÃO CORRETA: Comparando com a coluna 'senha_hash' obtida da imagem
-                    # Nota: Como sua senha está em formato hash no banco, certifique-se de passar 
-                    # a senha correta que gera aquele hash correspondente.
-                    if user["senha_hash"] == senha:
-                        # Define os estados na sessão baseando-se nas colunas reais
+                    # Converte a senha digitada para SHA-256 para comparar de igual para igual
+                    senha_digitada_hash = _converter_para_sha256(senha)
+                    
+                    # Compara o hash gerado com o 'senha_hash' armazenado no banco
+                    if user["senha_hash"] == senha_digitada_hash:
+                        # Define os estados na sessão
                         st.session_state.logged_in = True
                         st.session_state.user_id = user["id"]
-                        st.session_state.user_name = user["nome"]  # Coluna 'nome' confirmada na imagem
-                        st.session_state.empresa_id = user["empresa_id"] # Coluna 'empresa_id' confirmada
+                        st.session_state.user_name = user["nome"]  
+                        st.session_state.empresa_id = user["empresa_id"] 
                         st.session_state.batch_list = []
                         
                         # Ativa o gatilho para o app.py salvar os cookies
