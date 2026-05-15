@@ -111,15 +111,15 @@ def _limpar_cookie():
 
 
 def add_pwa_support():
-    st.markdown("""
-        <meta name="viewport"
-              content="width=device-width, initial-scale=1,
-                       maximum-scale=1, user-scalable=no,
-                       viewport-fit=cover">
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style"
-              content="black-translucent">
-        <meta name="mobile-web-app-capable" content="yes">
-        <style>
-          html { overflow: hidden; height: 100%; }
-          body { height: 100%; overflow: auto; -webkit-overflow-sc
+    pwa_html = (
+        "<meta name='viewport' content='width=device-width, initial-scale=1, "
+        "maximum-scale=1, user-scalable=no, viewport-fit=cover'>"
+        "<meta name='apple-mobile-web-app-capable' content='yes'>"
+        "<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>"
+        "<meta name='mobile-web-app-capable' content='yes'>"
+        "<style>"
+        "html { overflow: hidden; height: 100%; }"
+        "body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }"
+        "</style>"
+    )
+    st.markdown(pwa_html, unsafe_allow_html=True)
