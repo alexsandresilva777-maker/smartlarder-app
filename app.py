@@ -11,18 +11,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── 1. Inicialização Segura do Cookie Manager ─────────────────────────
-@st.cache_resource
-def init_cookie_manager():
-    # Recupera a senha dos secrets ou usa uma string padrão segura de contingência
-    password = st.secrets.get("COOKIE_PASSWORD", "chave_mestra_secreta_smartlarder_32char_min")
-    manager = EncryptedCookieManager(password=password)
-    if not manager.ready():
-        # Aguarda o componente sincronizar com o navegador
-        st.stop()
-    return manager
+# ── 1. Inicialização do Cookie Manager (Sem cache_resource para eliminar o Warning) ──
+# Pegamos a senha do secrets
+COOKIE_PASS = st.secrets.get("COOKIE_PASSWORD", "chave_mestra_secreta_smartlarder_32char_min")
 
-cookies = init_cookie_manager()
+# Instancia diretamente no escopo do app para o Streamlit gerenciar corretamente o widget
+cookies = EncryptedCookieManager(password=COOKIE_PASS)
+
+if not cookies.ready():
+    # Aguarda o componente sincronizar com o navegador sem travar a tela
+    st.stop()
 
 # ── 2. Inicialização do Banco de Dados Supabase ────────────────────────
 @st.cache_resource
@@ -69,15 +67,15 @@ def _limpar_cookie():
 
 # ── 4. Fluxo de Execução Principal (Main) ──────────────────────────────
 def main():
-    # Tenta restaurar a sessão automaticamente se o usuário não estiver logado na aba atual
+    # Tenta restaurar a sessão automaticamente se o usuário tiver o cookie ativo
     if not st.session_state.get("logged_in"):
         _restaurar_sessao_do_cookie()
 
-    # Se mesmo após checar o cookie ele continuar deslogado, exibe a tela de login
+    # Se continuar deslogado, exibe a tela de login
     if not st.session_state.get("logged_in"):
         show_login()
         
-        # Se a tela de login validou o usuário, ela ativa esta flag. Salvaremos o cookie aqui no app.py:
+        # Se a tela de login autenticou o usuário com sucesso, ela ativa esta flag
         if st.session_state.get("deve_salvar_cookie"):
             _salvar_sessao_no_cookie()
             del st.session_state["deve_salvar_cookie"] # Limpa a flag temporária
@@ -85,7 +83,6 @@ def main():
         return
 
     # ── Bloco de Segurança e Logout ─────────────────────────────────────
-    # Garante que as variáveis essenciais existem se o usuário passou pelo login
     if st.session_state.get("user_id") is None or st.session_state.get("empresa_id") is None:
         _limpar_cookie()
         st.session_state.clear()
@@ -101,15 +98,12 @@ def main():
             st.session_state.clear()
             st.rerun()
 
-    # ── Renderização das Telas do Sistema (Dashboard / Estoque) ─────────
+    # ── Renderização do Painel Principal ────────────────────────────────
     st.title("🍞 SmartLarder Pro — Painel Principal")
-    st.info("Conexão com Supabase estabelecida com sucesso!")
+    st.success("Logado com sucesso!")
+    st.info("Conexão com Supabase estabelecida.")
     
-    # Insira aqui o carregamento do restante do seu aplicativo
-    # Exemplo:
-    # tab1, tab2 = st.tabs(["Estoque", "Movimentações"])
-    # with tab1:
-    #     telas.estoque.show_estoque(supabase)
+    # Daqui para baixo entra o miolo do seu painel administrativo/estoque
 
 if __name__ == "__main__":
     main()
