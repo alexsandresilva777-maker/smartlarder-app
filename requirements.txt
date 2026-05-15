@@ -6,3 +6,4 @@ pytz>=2024.1
 pyzbar
 Pillow
 supabase
+streamlit-cookies-manager-v2
