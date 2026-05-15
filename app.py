@@ -43,14 +43,25 @@ _PWA = (
 )
 st.markdown(_PWA, unsafe_allow_html=True)
 
-# Cookie manager
-_COOKIE_PASSWORD = st.secrets.get(
-    "COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!"
-)
-cookies = EncryptedCookieManager(
-    prefix="smartlarder/",
-    password=_COOKIE_PASSWORD,
-)
+# ── Gerenciador de Cookies Seguro (Evita Duplicação de Elemento) ──────────────
+def _get_cookie_manager():
+    """
+    Guarda o gerenciador no st.session_state para evitar que reimportações
+    do arquivo app.py tentem recriar o componente visual e gerem erro de duplicidade.
+    """
+    if "_cookie_manager_instance" not in st.session_state:
+        _COOKIE_PASSWORD = st.secrets.get(
+            "COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!"
+        )
+        st.session_state["_cookie_manager_instance"] = EncryptedCookieManager(
+            prefix="smartlarder/",
+            password=_COOKIE_PASSWORD,
+        )
+    return st.session_state["_cookie_manager_instance"]
+
+# Inicializa o controle de cookies com segurança
+cookies = _get_cookie_manager()
+
 if not cookies.ready():
     st.stop()
 
@@ -59,27 +70,29 @@ if not cookies.ready():
 
 def _salvar_sessao_no_cookie(user: dict):
     try:
-        cookies["sl_user_id"]    = str(user.get("id", ""))
-        cookies["sl_username"]   = str(user.get("username", ""))
-        cookies["sl_nome"]       = str(user.get("nome", ""))
-        cookies["sl_role"]       = str(user.get("role", "domestico"))
-        cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
-        cookies["sl_token"]      = hashlib.sha256(
+        current_cookies = _get_cookie_manager()
+        current_cookies["sl_user_id"]    = str(user.get("id", ""))
+        current_cookies["sl_username"]   = str(user.get("username", ""))
+        current_cookies["sl_nome"]       = str(user.get("nome", ""))
+        current_cookies["sl_role"]       = str(user.get("role", "domestico"))
+        current_cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
+        current_cookies["sl_token"]      = hashlib.sha256(
             user.get("senha_hash", "").encode()
         ).hexdigest()[:16]
-        cookies.save()
+        current_cookies.save()
     except Exception:
         pass
 
 
 def _restaurar_sessao_do_cookie():
     try:
-        user_id    = cookies.get("sl_user_id", "")
-        username   = cookies.get("sl_username", "")
-        token      = cookies.get("sl_token", "")
-        empresa_id = cookies.get("sl_empresa_id", "1")
-        role       = cookies.get("sl_role", "domestico")
-        nome       = cookies.get("sl_nome", "")
+        current_cookies = _get_cookie_manager()
+        user_id    = current_cookies.get("sl_user_id", "")
+        username   = current_cookies.get("sl_username", "")
+        token      = current_cookies.get("sl_token", "")
+        empresa_id = current_cookies.get("sl_empresa_id", "1")
+        role       = current_cookies.get("sl_role", "domestico")
+        nome       = current_cookies.get("sl_nome", "")
 
         if not user_id or not username or not token:
             return
@@ -123,11 +136,12 @@ def _restaurar_sessao_do_cookie():
 
 def _limpar_cookie():
     try:
+        current_cookies = _get_cookie_manager()
         for key in ["sl_user_id", "sl_username", "sl_nome",
                     "sl_role", "sl_empresa_id", "sl_token"]:
-            if key in cookies:
-                cookies[key] = ""
-        cookies.save()
+            if key in current_cookies:
+                current_cookies[key] = ""
+        current_cookies.save()
     except Exception:
         pass
 
@@ -178,13 +192,13 @@ def main():
             st.code(traceback.format_exc())
 
     if   page == "Dashboard":
-        from telas.dashboard     import show_dashboard;     _load(show_dashboard)
+        from telas.dashboard   import show_dashboard;     _load(show_dashboard)
     elif page == "Produtos":
-        from telas.produtos      import show_produtos;      _load(show_produtos)
+        from telas.produtos    import show_produtos;      _load(show_produtos)
     elif page == "Cadastrar":
-        from telas.cadastro      import show_cadastro;      _load(show_cadastro)
+        from telas.cadastro    import show_cadastro;      _load(show_cadastro)
     elif page == "Recepção de Carga":
-        from telas.recepcao      import show_recepcao;      _load(show_recepcao)
+        from telas.recepcao    import show_recepcao;      _load(show_recepcao)
     elif page == "Lista de Compras":
         from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
     elif page == "Alertas":
