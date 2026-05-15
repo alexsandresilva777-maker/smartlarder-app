@@ -3,7 +3,7 @@ from supabase import create_client, Client
 from streamlit_cookies_manager import EncryptedCookieManager
 from telas.login import show_login
 
-# Configuração da página (Deve ser o primeiro comando Streamlit do script)
+# Configuração da página (Deve ser o primeiro comando do script)
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
@@ -11,15 +11,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── 1. Inicialização do Cookie Manager (Sem cache_resource para eliminar o Warning) ──
-# Pegamos a senha do secrets
+# ── 1. Inicialização Limpa do Cookie Manager (Sem avisos amarelos) ──
 COOKIE_PASS = st.secrets.get("COOKIE_PASSWORD", "chave_mestra_secreta_smartlarder_32char_min")
-
-# Instancia diretamente no escopo do app para o Streamlit gerenciar corretamente o widget
 cookies = EncryptedCookieManager(password=COOKIE_PASS)
 
 if not cookies.ready():
-    # Aguarda o componente sincronizar com o navegador sem travar a tela
     st.stop()
 
 # ── 2. Inicialização do Banco de Dados Supabase ────────────────────────
@@ -67,18 +63,17 @@ def _limpar_cookie():
 
 # ── 4. Fluxo de Execução Principal (Main) ──────────────────────────────
 def main():
-    # Tenta restaurar a sessão automaticamente se o usuário tiver o cookie ativo
+    # Tenta restaurar sessão antiga salva no navegador
     if not st.session_state.get("logged_in"):
         _restaurar_sessao_do_cookie()
 
-    # Se continuar deslogado, exibe a tela de login
+    # Fluxo caso o usuário não esteja autenticado
     if not st.session_state.get("logged_in"):
         show_login()
         
-        # Se a tela de login autenticou o usuário com sucesso, ela ativa esta flag
         if st.session_state.get("deve_salvar_cookie"):
             _salvar_sessao_no_cookie()
-            del st.session_state["deve_salvar_cookie"] # Limpa a flag temporária
+            del st.session_state["deve_salvar_cookie"]
             st.rerun()
         return
 
@@ -88,7 +83,7 @@ def main():
         st.session_state.clear()
         st.rerun()
 
-    # Sidebar com informações do usuário e botão de sair
+    # Sidebar com informações reais do usuário autenticado
     with st.sidebar:
         st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Indefinido')}")
         st.write(f"🏢 **Empresa ID:** {st.session_state.get('empresa_id')}")
@@ -98,12 +93,13 @@ def main():
             st.session_state.clear()
             st.rerun()
 
-    # ── Renderização do Painel Principal ────────────────────────────────
+    # ── Renderização do Painel Administrativo do SmartLarder Pro ────────
     st.title("🍞 SmartLarder Pro — Painel Principal")
-    st.success("Logado com sucesso!")
-    st.info("Conexão com Supabase estabelecida.")
+    st.success(f"Logado com sucesso como {st.session_state.get('user_name')}!")
     
-    # Daqui para baixo entra o miolo do seu painel administrativo/estoque
+    # Seu código das tabelas de estoque e negócios entra aqui embaixo:
+    # Exemplo:
+    # renderizar_telas_estoque(supabase)
 
 if __name__ == "__main__":
     main()
