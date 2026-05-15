@@ -110,7 +110,6 @@ def _restaurar_sessao_do_cookie():
         row = res.data[0] if res.data else None
 
         if not row:
-            _limpar_cookie()
             return
 
         token_esperado = hashlib.sha256(
@@ -118,7 +117,6 @@ def _restaurar_sessao_do_cookie():
         ).hexdigest()[:16]
 
         if token != token_esperado:
-            _limpar_cookie()
             return
 
         st.session_state.logged_in     = True
@@ -131,7 +129,7 @@ def _restaurar_sessao_do_cookie():
         st.session_state.batch_list    = []
 
     except Exception:
-        _limpar_cookie()
+        pass  # Evita loop de gravação de cookies antes da inicialização completa do app
 
 
 def _limpar_cookie():
@@ -149,12 +147,17 @@ def _limpar_cookie():
 # ── App principal ─────────────────────────────────────────────────────────────
 
 def main():
+    # Validação prévia de chaves para evitar congelamento por segredo ausente
+    if "SUPABASE_URL" not in st.secrets or "SUPABASE_KEY" not in st.secrets:
+        st.error("Erro de Configuração: As credenciais do Supabase não foram encontradas nos Secrets do Streamlit.")
+        st.stop()
+
     from utils.database import init_db
 
     try:
         init_db()
     except Exception as e:
-        st.error(f"Erro no banco: {e}")
+        st.error(f"Erro ao conectar ou inicializar o banco de dados: {e}")
         st.stop()
 
     defaults = {
