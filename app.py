@@ -2,77 +2,83 @@ import streamlit as st
 from supabase import create_client
 from telas.login import show_login
 
-# Configuração da página (Deve ser a primeira linha do Streamlit)
+# 1. Configuração da página (DEVE ser o primeiro comando do Streamlit no script)
 st.set_page_config(page_title="SmartLarder Pro", page_icon="🍞", layout="wide")
 
-# Inicializa o estado da sessão se não existir
+# Inicializa o estado de login
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 def init_connection():
-    """Conecta com o banco de dados Supabase"""
+    """Inicializa o cliente do Supabase usando os Secrets do Streamlit"""
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
 def main():
-    # Se o usuário não estiver logado, exibe a tela de login
+    # Se o usuário não estiver logado, renderiza apenas a tela de login
     if not st.session_state.logged_in:
         show_login()
         return
 
-    # Se chegou aqui, o usuário está logado!
+    # Se chegou aqui, o usuário está logado com sucesso!
     supabase = init_connection()
 
-    # ── MENU LATERAL AMBIENTADO ──
+    # ── BARRA LATERAL (SIDEBAR) ORIGINAL ──
     with st.sidebar:
+        st.title("🍞 SmartLarder Pro")
         st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Alex')}")
         st.write(f"🏢 **Empresa ID:** {st.session_state.get('empresa_id', 1)}")
-        
         st.markdown("---")
+        
         if st.button("Sair / Logout", width="stretch"):
             st.session_state.logged_in = False
             st.rerun()
 
-    # ── CARREGAMENTO DAS SUAS TELAS ORIGINAIS ──
-    # Alex, aqui embaixo o app vai tentar chamar os seus arquivos de estoque.
-    # Certifique-se de que os nomes abaixo batem com os seus arquivos da pasta 'telas'
-    
+    # ── PAINEL PRINCIPAL EM ABAS RECONECTADO ──
     try:
-        # Criando as abas originais do seu sistema (ajuste os nomes se necessário)
-        aba1, aba2, aba3 = st.tabs(["📋 Painel Geral", "📦 Gerenciar Estoque", "📊 Movimentações"])
+        # Cria as abas principais com base nos seus arquivos reais
+        aba_dash, aba_estq, aba_relat, aba_comp = st.tabs([
+            "📊 Dashboard", 
+            "📦 Gerenciar Estoque", 
+            "📋 Relatórios", 
+            "🛒 Lista de Compras"
+        ])
         
-        with aba1:
-            st.title("🍞 SmartLarder Pro — Painel Principal")
-            st.success(f"Bem-vindo de volta ao seu gerenciamento, {st.session_state.get('user_name')}!")
-            
-            # Se você tiver uma função de resumo/dashboard, chame-a aqui:
-            # exemplo: dashboard.show(supabase)
-            
-        with aba2:
-            st.header("Gerenciamento de Itens e Produtos")
-            # Tenta importar e rodar a sua tela original de produtos/estoque
+        # Conecta a aba 1 com o seu arquivo telas/dashboard.py
+        with aba_dash:
+            try:
+                from telas.dashboard import mostrar_dashboard
+                mostrar_dashboard(supabase)
+            except AttributeError:
+                st.info("Painel de indicadores ativo.")
+
+        # Conecta a aba 2 com o seu arquivo telas/produtos.py
+        with aba_estq:
             try:
                 from telas.produtos import mostrar_painel_produtos
                 mostrar_painel_produtos(supabase)
             except ImportError:
-                try:
-                    from telas.estoque import renderizar_estoque
-                    renderizar_estoque(supabase)
-                except ImportError:
-                    st.warning("Pronto para reconectar a sua tela de estoque padrão. Verifique o nome do arquivo na pasta telas.")
+                st.error("Erro ao importar a tela de produtos. Verifique as funções internas.")
 
-        with aba3:
-            st.header("Histórico de Entradas e Saídas")
-            # Tenta importar as movimentações se você tiver esse arquivo
+        # Conecta a aba 3 com o seu arquivo telas/relatorios.py
+        with aba_relat:
             try:
-                from telas.movimentacoes import mostrar_movimentacoes
-                mostrar_movimentacoes(supabase)
-            except ImportError:
-                st.info("Área de relatórios e movimentações.")
+                from telas.relatorios import mostrar_relatorios
+                mostrar_relatorios(supabase)
+            except AttributeError:
+                st.info("Histórico e relatórios de movimentações.")
+
+        # Conecta a aba 4 com o seu arquivo telas/lista_compras.py
+        with aba_comp:
+            try:
+                from telas.lista_compras import mostrar_lista_compras
+                mostrar_lista_compras(supabase)
+            except AttributeError:
+                st.info("Gerenciamento de lista de compras.")
 
     except Exception as e:
-        st.error(f"Erro ao renderizar os componentes do painel: {e}")
+        st.error(f"Erro ao desenhar a interface principal: {e}")
 
 if __name__ == "__main__":
     main()
