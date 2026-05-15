@@ -93,13 +93,13 @@ def main():
             st.session_state.clear()
             st.rerun()
 
-    # ── Renderização do Painel Administrativo do SmartLarder Pro ────────
-    st.title("🍞 SmartLarder Pro — Painel Principal")
+   # ── Renderização do Painel Administrativo do SmartLarder Pro ────────
+    st.title("📦 SmartLarder Pro — Painel Principal")
     st.success(f"Logado com sucesso como {st.session_state.get('user_name')}!")
     
-    # Seu código das tabelas de estoque e negócios entra aqui embaixo:
-    # Exemplo:
-    # renderizar_telas_estoque(supabase)
-
-if __name__ == "__main__":
-    main()
+    # IMPORTANTE: Chame aqui as funções originais que renderizavam o seu estoque!
+    # Se você tinha importado algo como 'from telas.estoque import renderizar_estoque'
+    # basta colocar a função ativa aqui embaixo passando o banco:
+    
+    from telas.produtos import mostrar_painel_produtos  # <- Exemplo de import do seu arquivo original
+    mostrar_painel_produtos(supabase)                  # <- Executa a renderização dos seus dados
