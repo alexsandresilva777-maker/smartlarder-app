@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-from utils.auth import tem_permissao
 import os
 import hashlib
+from utils.auth import tem_permissao
 from streamlit_cookies_manager import EncryptedCookieManager
 
 st.set_page_config(
@@ -12,31 +12,50 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-<style>
-    [data-testid="stSidebarNav"] {display: none !important;}
-    button[data-testid="stSidebarCollapseButton"] {
-        visibility: visible !important;
-        display: flex !important;
-        background-color: #2d6a4f !important;
-        color: white !important;
-        z-index: 999999 !important;
-    }
-    .block-container {padding-top: 1rem !important;}
-</style>
-""", unsafe_allow_html=True)
+# CSS — usa aspas simples dentro do HTML para evitar conflito
+_CSS = (
+    "<style>"
+    "[data-testid='stSidebarNav'] {display: none !important;}"
+    "button[data-testid='stSidebarCollapseButton'] {"
+    "    visibility: visible !important;"
+    "    display: flex !important;"
+    "    background-color: #2d6a4f !important;"
+    "    color: white !important;"
+    "    z-index: 999999 !important;"
+    "}"
+    ".block-container {padding-top: 1rem !important;}"
+    "</style>"
+)
+st.markdown(_CSS, unsafe_allow_html=True)
 
-_COOKIE_PREFIX   = "smartlarder/"
-_COOKIE_PASSWORD = st.secrets.get("COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!")
+# PWA — sem triple-quotes, sem aspas duplas no HTML
+_PWA = (
+    "<meta name='viewport' content='width=device-width, initial-scale=1,"
+    " maximum-scale=1, user-scalable=no, viewport-fit=cover'>"
+    "<meta name='apple-mobile-web-app-capable' content='yes'>"
+    "<meta name='apple-mobile-web-app-status-bar-style'"
+    " content='black-translucent'>"
+    "<meta name='mobile-web-app-capable' content='yes'>"
+    "<style>"
+    "html { overflow: hidden; height: 100%; }"
+    "body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }"
+    "</style>"
+)
+st.markdown(_PWA, unsafe_allow_html=True)
 
+# Cookie manager
+_COOKIE_PASSWORD = st.secrets.get(
+    "COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!"
+)
 cookies = EncryptedCookieManager(
-    prefix=_COOKIE_PREFIX,
+    prefix="smartlarder/",
     password=_COOKIE_PASSWORD,
 )
-
 if not cookies.ready():
     st.stop()
 
+
+# ── Funções de cookie ─────────────────────────────────────────────────────────
 
 def _salvar_sessao_no_cookie(user: dict):
     try:
@@ -67,11 +86,14 @@ def _restaurar_sessao_do_cookie():
 
         from utils.database import get_conn
         supabase = get_conn()
-        res = supabase.table("usuarios").select("*") \
-            .eq("id", int(user_id)) \
-            .eq("username", username) \
-            .eq("ativo", 1) \
+        res = (
+            supabase.table("usuarios")
+            .select("*")
+            .eq("id", int(user_id))
+            .eq("username", username)
+            .eq("ativo", 1)
             .execute()
+        )
         row = res.data[0] if res.data else None
 
         if not row:
@@ -110,16 +132,76 @@ def _limpar_cookie():
         pass
 
 
-def add_pwa_support():
-    pwa_html = (
-        "<meta name='viewport' content='width=device-width, initial-scale=1, "
-        "maximum-scale=1, user-scalable=no, viewport-fit=cover'>"
-        "<meta name='apple-mobile-web-app-capable' content='yes'>"
-        "<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>"
-        "<meta name='mobile-web-app-capable' content='yes'>"
-        "<style>"
-        "html { overflow: hidden; height: 100%; }"
-        "body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }"
-        "</style>"
-    )
-    st.markdown(pwa_html, unsafe_allow_html=True)
+# ── App principal ─────────────────────────────────────────────────────────────
+
+def main():
+    from utils.database import init_db
+
+    try:
+        init_db()
+    except Exception as e:
+        st.error(f"Erro no banco: {e}")
+        st.stop()
+
+    defaults = {
+        "logged_in":    False,
+        "user_id":      None,
+        "empresa_id":   None,
+        "role":         "",
+        "current_page": "Dashboard",
+        "alerts":       {},
+        "batch_list":   [],
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    if not st.session_state.get("logged_in"):
+        _restaurar_sessao_do_cookie()
+
+    if (not st.session_state.get("logged_in")
+            or st.session_state.get("user_id") is None
+            or st.session_state.get("empresa_id") is None):
+        from telas.login import show_login
+        show_login()
+        st.stop()
+
+    from telas.sidebar import show_sidebar
+    page = show_sidebar()
+
+    def _load(fn):
+        try:
+            fn()
+        except Exception as e:
+            import traceback
+            st.error(f"Erro na página {page}: {e}")
+            st.code(traceback.format_exc())
+
+    if   page == "Dashboard":
+        from telas.dashboard     import show_dashboard;     _load(show_dashboard)
+    elif page == "Produtos":
+        from telas.produtos      import show_produtos;      _load(show_produtos)
+    elif page == "Cadastrar":
+        from telas.cadastro      import show_cadastro;      _load(show_cadastro)
+    elif page == "Recepção de Carga":
+        from telas.recepcao      import show_recepcao;      _load(show_recepcao)
+    elif page == "Lista de Compras":
+        from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
+    elif page == "Alertas":
+        from telas.alertas       import show_alertas;       _load(show_alertas)
+    elif page == "Relatórios":
+        from telas.relatorios    import show_relatorios;    _load(show_relatorios)
+    elif page == "Fornecedores":
+        if tem_permissao("ver_fornecedores"):
+            from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
+        else:
+            st.error("Acesso restrito.")
+    elif page == "Usuários":
+        if st.session_state.role == "admin":
+            from telas.usuarios import show_usuarios; _load(show_usuarios)
+        else:
+            st.error("Acesso restrito.")
+
+
+if __name__ == "__main__":
+    main()
