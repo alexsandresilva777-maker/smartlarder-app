@@ -5,8 +5,7 @@ import os
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
 
-# -- Configuração da página --
-# (DEVE ser o primeiro comando Streamlit executado)
+# ── 1. Configuração da página (OBRIGATORIAMENTE O PRIMEIRO COMANDO) ──────────
 st.set_page_config(
     page_title="SmartLarder Pro",
     page_icon="📦",
@@ -14,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# -- CSS Interno --
+# ── 2. CSS Interno ───────────────────────────────────────────────────────────
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] {display: none !important;}
@@ -31,9 +30,10 @@ st.markdown("""
 
 import streamlit.components.v1 as components
 
-# ── Persistência de sessão via cookie (INSERIDO AQUI) ─────────────────────────
+# ── 3. Persistência de sessão via cookie ─────────────────────────────────────
 _COOKIE_PREFIX  = "smartlarder/"
-_COOKIE_PASSWORD = os.environ.get("COOKIES_PASSWORD", "smartlarder-secret-key-mude-isso")
+# Tenta buscar dos Secrets, se não achar usa a senha padrão de contingência
+_COOKIE_PASSWORD = st.secrets.get("COOKIES_PASSWORD", "smartlarder-secret-key-mude-isso-32char")
 
 # Instanciado no nível do módulo, fora de main()
 cookies = EncryptedCookieManager(
@@ -44,53 +44,8 @@ cookies = EncryptedCookieManager(
 if not cookies.ready():
     # Aguarda o componente carregar os cookies do navegador
     st.stop()
-# ─────────────────────────────────────────────────────────────────────────────
 
-# Configuração para transformar em PWA (App)
-def add_pwa_support():
-    pwa_code = """
-    <link rel="manifest" href="https://raw.githubusercontent.com/seu-usuario/seu-repo/main/manifest.json">
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('https://raw.githubusercontent.com/seu-usuario/seu-repo/main/sw.js');
-        });
-      }
-    </script>
-    """
-    # Truque para injetar metatags de tela cheia no Streamlit
-    st.markdown(
-        f"""
-        <style>
-        @media all {{
-            .stApp {{
-                padding-bottom: 50px;
-            }}
-        }}
-        </style>
-        <script>
-            var meta = document.createElement('meta');
-            meta.name = "viewport";
-            meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
-            document.getElementsByTagName('head')[0].appendChild(meta);
-            
-            var metaApple = document.createElement('meta');
-            metaApple.name = "apple-mobile-web-app-capable";
-            metaApple.content = "yes";
-            document.getElementsByTagName('head')[0].appendChild(metaApple);
-            
-            var metaStatus = document.createElement('meta');
-            metaStatus.name = "apple-mobile-web-app-status-bar-style";
-            metaStatus.content = "black-translucent";
-            document.getElementsByTagName('head')[0].appendChild(metaStatus);
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
-
-# Ativa o suporte ao App
-add_pwa_support()
-# ── Funções de persistência de sessão ─────────────────────────────────────────
+# ── 4. Funções de persistência de sessão ─────────────────────────────────────
 
 def _salvar_sessao_no_cookie(user: dict):
     """
@@ -108,14 +63,14 @@ def _salvar_sessao_no_cookie(user: dict):
             user.get("senha_hash", "").encode()
         ).hexdigest()[:16]
         cookies.save()
-    except Exception as e:
-        pass  # Cookie falhou — sessão ainda funciona normalmente
+    except Exception:
+        pass  # Se o cookie falhar, a sessão em memória ainda funcionará normalmente
 
 
 def _restaurar_sessao_do_cookie():
     """
     Tenta restaurar a sessão a partir do cookie salvo no navegador.
-    Valida o token contra o banco antes de aceitar.
+    Valida o token contra o banco do Supabase antes de aceitar.
     """
     try:
         user_id    = cookies.get("sl_user_id", "")
@@ -126,18 +81,14 @@ def _restaurar_sessao_do_cookie():
         nome       = cookies.get("sl_nome", "")
 
         if not user_id or not username or not token:
-            return  # Sem cookie — vai para login normal
+            return  # Sem cookie — segue para a tela de login normal
 
-        # Valida token contra o banco (sem re-digitar senha)
+        # Corrigido: Busca e validação feita direto no Supabase (Nuvem permanente)
         from utils.database import get_conn
-        conn = get_conn()
-        try:
-            row = conn.execute(
-                "SELECT * FROM usuarios WHERE id=? AND username=? AND ativo=1",
-                (int(user_id), username)
-            ).fetchone()
-        finally:
-            conn.close()
+        supabase = get_conn()
+        
+        res = supabase.table("usuarios").select("*").eq("id", int(user_id)).eq("username", username).eq("ativo", 1).execute()
+        row = res.data[0] if res.data else None
 
         if not row:
             _limpar_cookie()
@@ -149,10 +100,10 @@ def _restaurar_sessao_do_cookie():
         ).hexdigest()[:16]
 
         if token != token_esperado:
-            _limpar_cookie()  # Token inválido — senha foi trocada
+            _limpar_cookie()  # Token inválido — a senha foi alterada em outro dispositivo
             return
 
-        # ✅ Cookie válido — restaura sessão sem pedir login
+        # ✅ Cookie válido — restaura sessão sem pedir credenciais novamente
         st.session_state.logged_in     = True
         st.session_state.user_id       = int(user_id)
         st.session_state.username      = username
@@ -167,26 +118,50 @@ def _restaurar_sessao_do_cookie():
 
 
 def _limpar_cookie():
-    """Remove todos os cookies de sessão."""
+    """Remove todos os cookies de sessão no logout."""
     try:
-        for key in ["sl_user_id","sl_username","sl_nome",
-                    "sl_role","sl_empresa_id","sl_token"]:
+        for key in ["sl_user_id", "sl_username", "sl_nome",
+                    "sl_role", "sl_empresa_id", "sl_token"]:
             if key in cookies:
                 cookies[key] = ""
         cookies.save()
     except Exception:
         pass
-def main():
-    from utils.database import init_db, check_alerts
 
-    # Inicializa o Banco
+# ── 5. Suporte Corrigido para PWA (Mobile iOS/Android) ──────────────────────
+def add_pwa_support():
+    # Versão otimizada que injeta as metatags e corrige a rolagem/bounce no iOS
+    st.markdown("""
+        <meta name="viewport" 
+              content="width=device-width, initial-scale=1, 
+                       maximum-scale=1, user-scalable=no, 
+                       viewport-fit=cover">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" 
+              content="black-translucent">
+        <meta name="mobile-web-app-capable" content="yes">
+        <style>
+          /* Evita o comportamento de recarregamento indesejado no PWA do iOS */
+          html { overflow: hidden; height: 100%; }
+          body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }
+        </style>
+    """, unsafe_allow_html=True)
+
+# Ativa o suporte ao App (Chamada única, sem duplicados)
+add_pwa_support()
+
+# ── 6. Execução Principal do Aplicativo ──────────────────────────────────────
+def main():
+    from utils.database import init_db
+
+    # Inicializa o Banco (Executa a função de compatibilidade vazia do Supabase)
     try:
         init_db()
     except Exception as e:
         st.error(f"Erro no banco: {e}")
         st.stop()
 
-    # -- Estado de sessão --
+    # -- Estado de sessão padrão --
     defaults = {
         "logged_in": False,
         "user_id": None,
@@ -200,11 +175,11 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-   # ── Restaura sessão do cookie se session_state foi limpo ──────────────────
+    # ── Restaura sessão do cookie se session_state foi limpo pelo timeout ─────
     if not st.session_state.get("logged_in"):
         _restaurar_sessao_do_cookie()
 
-    # ── Bloco de segurança ────────────────────────────────────────────────────
+    # ── Bloco de segurança estruturado ────────────────────────────────────────
     if not st.session_state.get("logged_in") \
        or st.session_state.get("user_id") is None \
        or st.session_state.get("empresa_id") is None:
@@ -212,7 +187,7 @@ def main():
         show_login()
         st.stop()
 
-    # -- Interface e Navegação --
+    # -- Interface e Navegação lateral --
     from telas.sidebar import show_sidebar
     page = show_sidebar()
 
@@ -222,7 +197,7 @@ def main():
         except Exception as e:
             st.error(f"Erro na página {page}: {e}")
 
-    # Roteamento Centralizado
+    # Roteamento Centralizado das Telas
     if page == "Dashboard":
         from telas.dashboard import show_dashboard; _load(show_dashboard)
     elif page == "Produtos":
@@ -243,10 +218,4 @@ def main():
         else:
             st.error("Acesso restrito.")
     elif page == "Usuários":
-        if st.session_state.role == "admin":
-            from telas.usuarios import show_usuarios; _load(show_usuarios)
-        else:
-            st.error("Acesso restrito.")
-
-if __name__ == "__main__":
-    main()
+        if st.session_state
