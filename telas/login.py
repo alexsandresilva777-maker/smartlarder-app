@@ -8,48 +8,55 @@ def _get_supabase_client():
     return create_client(url, key)
 
 def _converter_para_sha256(texto):
-    """Transforma a senha digitada no mesmo formato criptografado do Supabase"""
     return hashlib.sha256(texto.encode('utf-8')).hexdigest()
 
 def show_login():
     st.title("🔐 Acesso ao SmartLarder Pro")
     
-    # Centraliza o formulário na tela
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
         with st.form("login_form", clear_on_submit=False):
-            email = st.text_input("Usuário", placeholder="Digite seu usuário (ex: alex)").strip()
-            senha = st.text_input("Senha", type="password", placeholder="Sua senha secreta")
+            # Campo simples para o usuário digitar
+            usuario_digitado = st.text_input("Usuário ou E-mail").strip()
+            senha_digitada = st.text_input("Senha", type="password")
             botao_login = st.form_submit_button("Entrar", width="stretch")
             
         if botao_login:
-            if not email or not senha:
+            if not usuario_digitado or not senha_digitada:
                 st.error("Por favor, preencha todos os campos.")
                 return
 
             try:
                 supabase = _get_supabase_client()
                 
-                # Busca o usuário na coluna 'username' (conforme a imagem)
-                resposta = supabase.table("usuarios").select("*").eq("username", email).execute()
+                # Forçamos a busca transformando o texto em minúsculas para evitar erros de digitação
+                login_busca = usuario_digitado.lower()
                 
-                if resposta.data and len(resposta.data) > 0:
-                    user = resposta.data[0]
+                # Busca direta na tabela usuarios
+                resposta = supabase.table("usuarios").select("*").execute()
+                
+                # Procuramos o usuário manualmente na lista retornada para evitar que filtros do banco deem "Não encontrado"
+                user = None
+                if resposta.data:
+                    for u in resposta.data:
+                        # Testamos tanto contra a coluna 'username' quanto contra o 'nome' ou 'id' para garantir o login antigo
+                        if str(u.get("username", "")).lower() == login_busca or str(u.get("nome", "")).lower() == login_busca:
+                            user = u
+                            break
+                
+                if user is not None:
+                    # Geramos o hash da senha digitada
+                    senha_hash_digitada = _converter_para_sha256(senha_digitada)
                     
-                    # Converte a senha digitada para SHA-256 para comparar de igual para igual
-                    senha_digitada_hash = _converter_para_sha256(senha)
-                    
-                    # Compara o hash gerado com o 'senha_hash' armazenado no banco
-                    if user["senha_hash"] == senha_digitada_hash:
-                        # Define os estados na sessão
+                    # Verificação dupla: aceita tanto se a senha estiver em hash quanto se tiver ficado em texto limpo no banco (como o login antigo)
+                    if user.get("senha_hash") == senha_hash_digitada or user.get("senha_hash") == senha_digitada or user.get("senha") == senha_digitada:
+                        
                         st.session_state.logged_in = True
                         st.session_state.user_id = user["id"]
                         st.session_state.user_name = user["nome"]  
                         st.session_state.empresa_id = user["empresa_id"] 
                         st.session_state.batch_list = []
-                        
-                        # Ativa o gatilho para o app.py salvar os cookies
                         st.session_state.deve_salvar_cookie = True
                         
                         st.success(f"Bem-vindo de volta, {user['nome']}!")
@@ -57,7 +64,7 @@ def show_login():
                     else:
                         st.error("Senha incorreta. Tente novamente.")
                 else:
-                    st.error("Usuário não encontrado.")
+                    st.error("Usuário não encontrado no sistema.")
                     
             except Exception as e:
-                st.error(f"Erro ao tentar autenticar: {e}")
+                st.error(f"Erro na comunicação com o banco: {e}")
