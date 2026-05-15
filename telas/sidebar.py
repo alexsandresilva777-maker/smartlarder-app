@@ -121,6 +121,12 @@ Baseada em estoque mínimo + consumo médio dos últimos 30 dias.
 
         # Logoff — limpa sessão completamente
         if st.button("🚪  Sair", use_container_width=True):
+            # Limpa cookie antes de destruir a sessão
+            try:
+                from app import _limpar_cookie
+                _limpar_cookie()
+            except Exception:
+                pass
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
