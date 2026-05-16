@@ -2,8 +2,6 @@
 import streamlit as st
 from datetime import datetime
 import pytz
-from utils.database import (listar_produtos, excluir_produto,
-                             atualizar_produto, registrar_movimentacao)
 
 _TZ = pytz.timezone("America/Sao_Paulo")
 
@@ -27,7 +25,7 @@ def _semaforo(produto: dict) -> tuple[str, str, str, str]:
         dias = 999
 
     if dias < 0:    return ("🔴","#e74c3c","#fde8e8","Vencido")
-    if dias <= 7:   return ("🔴","#e74c3c","#fff3cd",f"{dias}d")
+    if dias <= 7:    return ("🔴","#e74c3c","#fff3cd",f"{dias}d")
     if dias <= 15:  return ("🟡","#f0a500","#fffde7",f"{dias}d")
     return ("🟢","#2d6a4f","#e8f5e9","OK")
 
@@ -36,7 +34,70 @@ def _fmt_brl(v):
     return f"R$ {v:.2f}".replace(".",",")
 
 
-def show_produtos():
+def _buscar_produtos_supabase(supabase, user_id, busca="", categoria="Todas", status_filtro="Todos"):
+    """Substitui a antiga função listar_produtos realizando os filtros direto no Supabase"""
+    try:
+        query = supabase.table("produtos").select("*")
+        
+        # Como o banco armazena dados globais ou por empresa, buscamos os registros
+        res = query.execute()
+        
+        if not res.data:
+            return []
+            
+        produtos = res.data
+        produtos_filtrados = []
+        hoje = datetime.now(_TZ).date()
+        
+        for p in produtos:
+            # 1. Filtro por nome ou código de barras
+            if busca:
+                nome_p = p.get("nome", "").lower()
+                cod_p = p.get("codigo_barras", "") or ""
+                if busca.lower() not in nome_p and busca not in cod_p:
+                    continue
+            
+            # 2. Filtro por Categoria
+            if categoria != "Todas" and p.get("categoria") != categoria:
+                continue
+                
+            # Calcular dias para vencer e definir status em tempo real
+            try:
+                val = datetime.strptime(p["validade"], "%Y-%m-%d").date()
+                dias = (val - hoje).days
+            except Exception:
+                dias = 999
+                
+            status_real = "ok"
+            if dias < 0:
+                status_real = "vencido"
+            elif dias <= 7:
+                status_real = "critico"
+            elif dias <= 30:
+                status_real = "atencao"
+                
+            # 3. Filtro por Status do Semáforo
+            if status_filtro == "Vencido" and status_real != "vencido":
+                continue
+            elif status_filtro == "Crítico (≤7d)" and status_real != "critico":
+                continue
+            elif status_filtro == "Atenção (≤30d)" and status_real != "atencao":
+                continue
+            elif status_filtro == "OK" and status_real != "ok":
+                continue
+                
+            # Injeta o status processado e os dias no dicionário do produto
+            p["status"] = status_real
+            p["dias_para_vencer"] = dias
+            produtos_filtrados.append(p)
+            
+        return produtos_filtrados
+    except Exception as e:
+        st.error(f"Erro ao buscar produtos: {e}")
+        return []
+
+
+def show_produtos(supabase): # Recebe o cliente instanciado do app.py
     user_id = st.session_state.get("user_id", 1)
     st.markdown("## 📋 Produtos em Estoque")
 
@@ -50,7 +111,7 @@ def show_produtos():
         with f3:
             fs = st.selectbox("Status", ["Todos","Vencido","Crítico (≤7d)","Atenção (≤30d)","OK"])
 
-    produtos = listar_produtos(user_id, fn, fc, fs)
+    produtos = _buscar_produtos_supabase(supabase, user_id, fn, fc, fs)
 
     if not produtos:
         st.info("Nenhum produto encontrado com os filtros aplicados.")
@@ -111,13 +172,17 @@ def show_produtos():
                         if st.button("🗑️", key=f"d_{p['id']}", help="Excluir"):
                             st.session_state[f"del_{p['id']}"] = True
 
-            # Confirmação exclusão
+            # Confirmação exclusão direto no Supabase
             if st.session_state.get(f"del_{p['id']}"):
                 st.warning(f"Confirma exclusão de **{p['nome']}**?")
                 y, n = st.columns(2)
                 with y:
                     if st.button("✅ Confirmar", key=f"dy_{p['id']}"):
-                        excluir_produto(p["id"], user_id)
+                        try:
+                            supabase.table("produtos").delete().eq("id", p["id"]).execute()
+                            st.success("Produto removido!")
+                        except Exception as e:
+                            st.error(f"Erro ao deletar: {e}")
                         st.session_state.pop(f"del_{p['id']}", None)
                         st.rerun()
                 with n:
@@ -127,16 +192,16 @@ def show_produtos():
 
             if st.session_state.get(f"edit_{p['id']}"):
                 with st.expander(f"✏️ Editando: {p['nome']}", expanded=True):
-                    _form_edicao(p, user_id)
+                    _form_edicao(supabase, p, user_id)
 
             if st.session_state.get(f"mov_{p['id']}"):
                 with st.expander(f"📦 Movimentar: {p['nome']}", expanded=True):
-                    _form_mov(p, user_id)
+                    _form_mov(supabase, p, user_id)
 
         st.markdown("<hr style='margin:5px 0;border-color:#eef2ee;'>", unsafe_allow_html=True)
 
 
-def _form_edicao(p, user_id):
+def _form_edicao(supabase, p, user_id):
     with st.form(f"fe_{p['id']}"):
         c1, c2 = st.columns(2)
         with c1:
@@ -170,21 +235,26 @@ def _form_edicao(p, user_id):
         with s2: cancelar = st.form_submit_button("❌ Cancelar")
 
     if salvar:
-        atualizar_produto(p["id"], user_id, dict(
-            codigo_barras=codigo, nome=nome, categoria=categoria,
-            quantidade=quantidade, unidade=unidade, validade=str(validade),
-            lote=lote, fornecedor=fornecedor, localizacao=localizacao,
-            preco_custo=preco, estoque_minimo=estoque_min, observacoes=obs,
-        ))
+        try:
+            # Atualiza os dados no Supabase
+            supabase.table("produtos").update({
+                "codigo_barras": codigo, "nome": nome, "categoria": categoria,
+                "quantidade": quantidade, "unidade": unidade, "validade": str(validade),
+                "lote": lote, "fornecedor": fornecedor, "localizacao": localizacao,
+                "preco_custo": preco, "estoque_minimo": estoque_min, "observacoes": obs
+            }).eq("id", p["id"]).execute()
+            st.success("✅ Produto atualizado!")
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
         st.session_state.pop(f"edit_{p['id']}", None)
-        st.success("✅ Produto atualizado!")
         st.rerun()
+        
     if cancelar:
         st.session_state.pop(f"edit_{p['id']}", None)
         st.rerun()
 
 
-def _form_mov(p, user_id):
+def _form_mov(supabase, p, user_id):
     with st.form(f"fm_{p['id']}"):
         st.info(f"Estoque atual: **{p['quantidade']} {p['unidade']}** "
                 f"| Mínimo: **{p.get('estoque_minimo',0) or 0} {p['unidade']}**")
@@ -197,14 +267,32 @@ def _form_mov(p, user_id):
         with s2: cancelar = st.form_submit_button("❌ Cancelar")
 
     if salvar:
-        if tipo=="saida" and qtd > p["quantidade"]:
+        if tipo == "saida" and qtd > p["quantidade"]:
             st.error("Quantidade de saída maior que o estoque disponível!")
         else:
-            registrar_movimentacao(p["id"], user_id, tipo, qtd, obs,
-                                   st.session_state.get("username",""))
+            try:
+                # 1. Calcula a nova quantidade em estoque do produto
+                nova_qtd = p["quantidade"] + qtd if tipo == "entrada" else p["quantidade"] - qtd
+                
+                # 2. Atualiza a tabela de produtos
+                supabase.table("produtos").update({"quantidade": nova_qtd}).eq("id", p["id"]).execute()
+                
+                # 3. Registra a trilha na tabela de movimentações
+                supabase.table("movimentacoes").insert({
+                    "produto_id": p["id"],
+                    "tipo": tipo,
+                    "quantidade": qtd,
+                    "observacao": obs,
+                    "usuario": st.session_state.get("username", "sistema")
+                }).execute()
+                
+                st.success(f"✅ {'Entrada' if tipo=='entrada' else 'Saída'} registrada!")
+            except Exception as e:
+                st.error(f"Erro ao registrar movimentação: {e}")
+                
             st.session_state.pop(f"mov_{p['id']}", None)
-            st.success(f"✅ {'Entrada' if tipo=='entrada' else 'Saída'} registrada!")
             st.rerun()
+            
     if cancelar:
         st.session_state.pop(f"mov_{p['id']}", None)
         st.rerun()
