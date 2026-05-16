@@ -158,48 +158,59 @@ def main():
         show_login()
         st.stop()
 
-    # Instancia a conexão com o Supabase para distribuir entre as telas
+    # Instancia a conexão com o Supabase
     from utils.database import get_conn
     supabase = get_conn()
 
     from telas.sidebar import show_sidebar
     page = show_sidebar()
 
-    # Função interna para carregar as telas injetando a conexão do Supabase
-    def _load(fn, exige_supabase=False):
+    # Carregador tolerante: só injeta o 'supabase' se a função explicitamente aceitar ou pedir
+    def _load(fn, passa_supabase=False):
         try:
-            if exige_supabase:
+            if passa_supabase:
                 fn(supabase)
             else:
                 fn()
+        except TypeError as te:
+            # Caso dê erro de argumento, tenta a outra assinatura dinamicamente para não travar a tela
+            try:
+                if not passa_supabase:
+                    fn(supabase)
+                else:
+                    fn()
+            except Exception:
+                import traceback
+                st.error(f"Erro de assinatura na página {page}: {te}")
+                st.code(traceback.format_exc())
         except Exception as e:
             import traceback
             st.error(f"Erro na página {page}: {e}")
             st.code(traceback.format_exc())
 
-    # Direcionamento das páginas com o envio correto dos argumentos
-    if   page == "Dashboard":
-        from telas.dashboard     import show_dashboard;     _load(show_dashboard, exige_supabase=True)
+    # Mapeamento corrigido baseado nas atualizações que fizemos nas conversas
+    if page == "Dashboard":
+        from telas.dashboard import show_dashboard; _load(show_dashboard, passa_supabase=True)
     elif page == "Produtos":
-        from telas.produtos      import show_produtos;      _load(show_produtos, exige_supabase=True)
+        from telas.produtos import show_produtos; _load(show_produtos, passa_supabase=True)
     elif page == "Cadastrar":
-        from telas.cadastro      import show_cadastro;      _load(show_cadastro)
+        from telas.cadastro import show_cadastro; _load(show_cadastro, passa_supabase=False)
     elif page == "Recepção de Carga":
-        from telas.recepcao      import show_recepcao;      _load(show_recepcao)
+        from telas.recepcao import show_recepcao; _load(show_recepcao, passa_supabase=False)
     elif page == "Lista de Compras":
-        from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
+        from telas.lista_compras import show_lista_compras; _load(show_lista_compras, passa_supabase=False)
     elif page == "Alertas":
-        from telas.alertas       import show_alertas;       _load(show_alertas, exige_supabase=True)
+        from telas.alertas import show_alertas; _load(show_alertas, passa_supabase=True)
     elif page == "Relatórios":
-        from telas.relatorios    import show_relatorios;    _load(show_relatorios)
+        from telas.relatorios import show_relatorios; _load(show_relatorios, passa_supabase=False)
     elif page == "Fornecedores":
         if tem_permissao("ver_fornecedores"):
-            from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
+            from telas.fornecedores import show_fornecedores; _load(show_fornecedores, passa_supabase=False)
         else:
             st.error("Acesso restrito.")
     elif page == "Usuários":
         if st.session_state.role == "admin":
-            from telas.usuarios import show_usuarios; _load(show_usuarios)
+            from telas.usuarios import show_usuarios; _load(show_usuarios, passa_supabase=False)
         else:
             st.error("Acesso restrito.")
 
