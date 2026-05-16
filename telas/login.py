@@ -5,8 +5,8 @@ import hashlib
 
 def show_login(cookies, salvar_cookie_fn):
     """
-    Tela de login integrada ao Supabase.
-    cookies         — instância do EncryptedCookieManager (vem do app.py)
+    Tela de login integrada ao Supabase utilizando a gaveta global st.session_state["db"].
+    cookies          — instância do EncryptedCookieManager (vem do app.py)
     salvar_cookie_fn — função _salvar_cookie() do app.py
     """
     st.markdown(
@@ -32,48 +32,50 @@ def show_login(cookies, salvar_cookie_fn):
         st.markdown("")
 
         if st.button("Entrar", use_container_width=True, type="primary"):
-            if not username or not senha:
-                st.warning("Preencha usuário e senha.")
-                return
+        if not username or not senha:
+            st.warning("Preencha usuário e senha.")
+            return
 
-            user = _verificar_login(username.strip(), senha)
-            if user:
-                # Preenche session_state
-                st.session_state.logged_in     = True
-                st.session_state.user_id       = user["id"]
-                st.session_state.username      = user["username"]
-                st.session_state.nome_completo = user.get("nome") or user.get("name","")
-                st.session_state.role          = user.get("role", "domestico")
-                st.session_state.empresa_id    = user.get("empresa_id", 1)
-                st.session_state.alerts        = {}
-                st.session_state.batch_list    = []
-                # Salva cookie para persistência
-                salvar_cookie_fn(user)
-                st.rerun()
-            else:
-                st.error("Credenciais inválidas ou conta inativa.")
+        user = _verificar_login(username.strip(), senha)
+        if user:
+            # Preenche o session_state usando o padrão dicionário (seguro contra quebras)
+            st.session_state["logged_in"]     = True
+            st.session_state["user_id"]       = user["id"]
+            st.session_state["username"]      = user["username"]
+            st.session_state["nome_completo"] = user.get("nome") or user.get("name", "Usuário")
+            st.session_state["role"]          = user.get("role", "domestico")
+            st.session_state["empresa_id"]    = user.get("empresa_id", 1)
+            st.session_state["alerts"]        = {}
+            st.session_state["batch_list"]    = []
+            
+            # Salva cookie para persistência
+            salvar_cookie_fn(user)
+            st.rerun()
+        else:
+            st.error("Credenciais inválidas ou conta inativa.")
 
-        st.markdown(
-            "<div style='text-align:center;margin-top:16px;"
-            "color:#9ab;font-size:0.82rem;'>"
-            "Acesso inicial: <code>admin</code> / <code>admin123</code><br>"
-            "<span style='color:#e67e22;'>"
-            "Troque a senha após o primeiro acesso.</span>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        "<div style='text-align:center;margin-top:16px;"
+        "color:#9ab;font-size:0.82rem;'>"
+        "Acesso inicial: <code>admin</code> / <code>admin123</code><br>"
+        "<span style='color:#e67e22;'>"
+        "Troque a senha após o primeiro acesso.</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _verificar_login(username: str, senha: str) -> dict | None:
     """
-    Consulta a tabela 'usuarios' no Supabase.
+    Consulta a tabela 'usuarios' no Supabase buscando a conexão ativa do session_state.
     Aceita dois formatos de senha:
       1. Hash SHA-256 armazenado na coluna senha_hash
       2. Senha em texto puro (fallback para migração)
     """
+    # Resgata a conexão centralizada gerada pelo app.py
     db = st.session_state.get("db")
     if db is None:
-        st.error("Sem conexão com o banco de dados.")
+        st.error("Sem conexão com o banco de dados ativo.")
         return None
 
     try:
@@ -99,5 +101,5 @@ def _verificar_login(username: str, senha: str) -> dict | None:
         return None
 
     except Exception as e:
-        st.error(f"Erro ao verificar login: {e}")
+        st.error(f"Erro ao verificar login no banco: {e}")
         return None
