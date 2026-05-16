@@ -3,6 +3,7 @@ import streamlit as st
 import os
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
+from supabase import create_client, Client
 
 st.set_page_config(
     page_title="SmartLarder Pro",
@@ -112,14 +113,14 @@ def _restaurar_cookie():
             _limpar_cookie(); return
 
         # Sessão restaurada com sucesso
-        st.session_state.logged_in     = True
-        st.session_state.user_id       = int(user_id)
-        st.session_state.username      = username
-        st.session_state.nome_completo = nome
-        st.session_state.role          = role
-        st.session_state.empresa_id    = int(empresa_id)
-        st.session_state.alerts        = {}
-        st.session_state.batch_list    = []
+        st.session_state["logged_in"]     = True
+        st.session_state["user_id"]       = int(user_id)
+        st.session_state["username"]      = username
+        st.session_state["nome_completo"] = nome
+        st.session_state["role"]          = role
+        st.session_state["empresa_id"]    = int(empresa_id)
+        st.session_state["alerts"]        = {}
+        st.session_state["batch_list"]    = []
 
     except Exception:
         _limpar_cookie()
@@ -128,14 +129,15 @@ def _restaurar_cookie():
 # ── App principal ─────────────────────────────────────────────────────────────
 
 def main():
-    # 1. Inicializa o cliente Supabase UMA vez e guarda no session_state
-    #    Todas as telas acessam via st.session_state["db"]
+    # 1. Inicializa o cliente Supabase diretamente e guarda no session_state
     if "db" not in st.session_state:
         try:
-            from utils.database import get_conn
-            st.session_state["db"] = get_conn()
+            # Resgata as chaves diretamente do segredo do Streamlit Cloud
+            url: str = st.secrets["SUPABASE_URL"]
+            key: str = st.secrets["SUPABASE_KEY"]
+            st.session_state["db"] = create_client(url, key)
         except Exception as e:
-            st.error(f"Erro ao conectar ao Supabase: {e}")
+            st.error(f"Erro ao conectar diretamente ao Supabase: {e}")
             st.stop()
 
     # 2. Defaults de sessão
@@ -178,15 +180,15 @@ def main():
             st.error(f"Erro na página {page}: {e}")
             st.code(traceback.format_exc())
 
-    # 6. Roteamento — telas acessam o db via st.session_state["db"]
+    # 6. Roteamento — as funções agora buscam a conexão na gaveta global
     if   page == "Dashboard":
-        from telas.dashboard     import show_dashboard;     _load(show_dashboard)
+        from telas.dashboard   import show_dashboard;    _load(show_dashboard)
     elif page == "Produtos":
-        from telas.produtos      import show_produtos;      _load(show_produtos)
+        from telas.produtos    import show_produtos;     _load(show_produtos)
     elif page == "Cadastrar":
-        from telas.cadastro      import show_cadastro;      _load(show_cadastro)
+        from telas.cadastro    import show_cadastro;     _load(show_cadastro)
     elif page == "Recepção de Carga":
-        from telas.recepcao      import show_recepcao;      _load(show_recepcao)
+        from telas.recepcao    import show_recepcao;     _load(show_recepcao)
     elif page == "Lista de Compras":
         from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
     elif page == "Alertas":
