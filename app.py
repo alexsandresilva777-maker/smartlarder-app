@@ -135,18 +135,6 @@ def _limpar_cookie():
 # ── App principal ─────────────────────────────────────────────────────────────
 
 def main():
-    # Removido o init_db antigo que estava quebrando o app
-    
-    defaults = {
-        "logged_in":    False,
-        "user_id":      None,
-        "empresa_id":   None,
-        "role":         "",
-        "current_page": "Dashboard",
-        "alerts":       {},
-        "batch_list":   [],
-    }
-
     defaults = {
         "logged_in":    False,
         "user_id":      None,
@@ -170,21 +158,30 @@ def main():
         show_login()
         st.stop()
 
+    # Instancia a conexão com o Supabase para distribuir entre as telas
+    from utils.database import get_conn
+    supabase = get_conn()
+
     from telas.sidebar import show_sidebar
     page = show_sidebar()
 
-    def _load(fn):
+    # Função interna para carregar as telas injetando a conexão do Supabase
+    def _load(fn, exige_supabase=False):
         try:
-            fn()
+            if exige_supabase:
+                fn(supabase)
+            else:
+                fn()
         except Exception as e:
             import traceback
             st.error(f"Erro na página {page}: {e}")
             st.code(traceback.format_exc())
 
+    # Direcionamento das páginas com o envio correto dos argumentos
     if   page == "Dashboard":
-        from telas.dashboard     import show_dashboard;     _load(show_dashboard)
+        from telas.dashboard     import show_dashboard;     _load(show_dashboard, exige_supabase=True)
     elif page == "Produtos":
-        from telas.produtos      import show_produtos;      _load(show_produtos)
+        from telas.produtos      import show_produtos;      _load(show_produtos, exige_supabase=True)
     elif page == "Cadastrar":
         from telas.cadastro      import show_cadastro;      _load(show_cadastro)
     elif page == "Recepção de Carga":
@@ -192,7 +189,7 @@ def main():
     elif page == "Lista de Compras":
         from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
     elif page == "Alertas":
-        from telas.alertas       import show_alertas;       _load(show_alertas)
+        from telas.alertas       import show_alertas;       _load(show_alertas, exige_supabase=True)
     elif page == "Relatórios":
         from telas.relatorios    import show_relatorios;    _load(show_relatorios)
     elif page == "Fornecedores":
