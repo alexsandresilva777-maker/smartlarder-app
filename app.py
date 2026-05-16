@@ -168,7 +168,7 @@ def main():
         show_login(cookies, _salvar_cookie)
         st.stop()
 
-    # 5. Sidebar e roteamento
+   # 5. Sidebar e roteamento
     from telas.sidebar import show_sidebar
     page = show_sidebar(_limpar_cookie)
 
@@ -179,6 +179,9 @@ def main():
             import traceback
             st.error(f"Erro na página {page}: {e}")
             st.code(traceback.format_exc())
+
+    # Padroniza a string de role para evitar problemas com maiúsculas/espaços
+    user_role = str(st.session_state.get("role", "")).lower().strip()
 
     # 6. Roteamento — as funções agora buscam a conexão na gaveta global
     if   page == "Dashboard":
@@ -200,10 +203,13 @@ def main():
     elif page == "Perdas":
         from telas.perdas        import show_perdas;        _load(show_perdas)
     elif page == "Usuários":
-        if st.session_state.role == "admin":
+        # Validação flexível: aceita 'admin', 'administrador', etc.
+        if "admin" in user_role:
             from telas.usuarios  import show_usuarios;      _load(show_usuarios)
         else:
-            st.error("Acesso restrito a administradores.")
+            st.error("🔒 Acesso restrito a administradores.")
+    elif page == "Ajuda":
+        from telas.ajuda         import show_ajuda;         _load(show_ajuda)
 
 
 if __name__ == "__main__":
