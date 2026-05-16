@@ -32,27 +32,27 @@ def show_login(cookies, salvar_cookie_fn):
         st.markdown("")
 
         if st.button("Entrar", use_container_width=True, type="primary"):
-        if not username or not senha:
-            st.warning("Preencha usuário e senha.")
-            return
+            if not username or not senha:
+                st.warning("Preencha usuário e senha.")
+                return
 
-        user = _verificar_login(username.strip(), senha)
-        if user:
-            # Preenche o session_state usando o padrão dicionário (seguro contra quebras)
-            st.session_state["logged_in"]     = True
-            st.session_state["user_id"]       = user["id"]
-            st.session_state["username"]      = user["username"]
-            st.session_state["nome_completo"] = user.get("nome") or user.get("name", "Usuário")
-            st.session_state["role"]          = user.get("role", "domestico")
-            st.session_state["empresa_id"]    = user.get("empresa_id", 1)
-            st.session_state["alerts"]        = {}
-            st.session_state["batch_list"]    = []
-            
-            # Salva cookie para persistência
-            salvar_cookie_fn(user)
-            st.rerun()
-        else:
-            st.error("Credenciais inválidas ou conta inativa.")
+            user = _verificar_login(username.strip(), senha)
+            if user:
+                # Preenche o session_state usando o padrão dicionário (seguro contra quebras)
+                st.session_state["logged_in"]     = True
+                st.session_state["user_id"]       = user["id"]
+                st.session_state["username"]      = user["username"]
+                st.session_state["nome_completo"] = user.get("nome") or user.get("name", "Usuário")
+                st.session_state["role"]          = user.get("role", "domestico")
+                st.session_state["empresa_id"]    = user.get("empresa_id", 1)
+                st.session_state["alerts"]        = {}
+                st.session_state["batch_list"]    = []
+                
+                # Salva cookie para persistência
+                salvar_cookie_fn(user)
+                st.rerun()
+            else:
+                st.error("Credenciais inválidas ou conta inativa.")
 
     st.markdown(
         "<div style='text-align:center;margin-top:16px;"
