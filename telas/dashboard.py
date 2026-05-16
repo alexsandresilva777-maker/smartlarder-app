@@ -29,8 +29,8 @@ def _kpi_card(col, emoji_label: str, valor, cor: str, bg: str, border: str,
             unsafe_allow_html=True,
         )
 
-def _buscar_dados_supabase(supabase, user_id: int):
-    """Substitui o antigo utils.database puxando os dados reais do Supabase"""
+def _buscar_dados_supabase(user_id: int):
+    """Substitui o antigo utils.database puxando os dados reais do Supabase via session_state"""
     stats = {
         "total": 0, "vencidos": 0, "criticos": 0, "atencao": 0, "ok": 0,
         "total_estoque": 0.0, "gasto_mensal": 0.0, "abaixo_minimo": 0,
@@ -40,6 +40,8 @@ def _buscar_dados_supabase(supabase, user_id: int):
     movimentacoes = []
     
     try:
+        supabase = st.session_state["db"]
+        
         # 1. Busca todos os produtos vinculados ao usuário/empresa
         res_prod = supabase.table("produtos").select("*").execute()
         if res_prod.data:
@@ -93,7 +95,7 @@ def _buscar_dados_supabase(supabase, user_id: int):
         
     return stats, produtos, movimentacoes
 
-def show_dashboard(supabase): # Recebe a conexão do app.py
+def show_dashboard(): # Alterado: sem o parâmetro supabase na assinatura
     user_id = st.session_state.get("user_id", 1)
     nome    = st.session_state.get("nome_completo","Usuário").split()[0]
     hoje    = datetime.now(_TZ).strftime("%d/%m/%Y")
@@ -117,8 +119,8 @@ def show_dashboard(supabase): # Recebe a conexão do app.py
         unsafe_allow_html=True,
     )
 
-    # Processa os dados diretamente do Supabase
-    s, todos, mov = _buscar_dados_supabase(supabase, user_id)
+    # Processa os dados diretamente do Supabase usando a função adaptada
+    s, todos, mov = _buscar_dados_supabase(user_id)
 
     # ── KPIs Estoque ───────────────────────────────────────────────────────────
     st.markdown("#### 📦 Situação do Estoque")
