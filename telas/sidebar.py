@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 
+# Aba 'Ajuda' adicionada na base para que todos os perfis tenham acesso
 _PAGES_BASE = [
     ("🏠", "Dashboard"),
     ("📋", "Produtos"),
@@ -9,18 +10,24 @@ _PAGES_BASE = [
     ("🛒", "Lista de Compras"),
     ("📊", "Relatórios"),
     ("🔔", "Alertas"),
+    ("❓", "Ajuda"),
 ]
 
 
 def show_sidebar(limpar_cookie_fn) -> str:
-    role       = st.session_state.get("role", "domestico")
-    nome       = st.session_state.get("nome_completo", "Usuário")
-    rc = {"admin":"#e74c3c","comercial":"#e67e22","domestico":"#2d6a4f"}.get(role,"#2d6a4f")
-    rb = {"admin":"#fde8e8","comercial":"#fff3cd","domestico":"#e8f5e9"}.get(role,"#e8f5e9")
+    # Captura o role e força letras minúsculas sem espaços para evitar quebras por string mal formatada
+    role_raw = st.session_state.get("role", "domestico")
+    role = str(role_raw).lower().strip()
+    
+    nome = st.session_state.get("nome_completo", "Usuário")
+    
+    # Mapeamento de cores resiliente ao formato da string
+    rc = {"admin": "#e74c3c", "comercial": "#e67e22", "domestico": "#2d6a4f"}.get(role, "#2d6a4f")
+    rb = {"admin": "#fde8e8", "comercial": "#fff3cd", "domestico": "#e8f5e9"}.get(role, "#e8f5e9")
 
     with st.sidebar:
         st.markdown(
-            "<div style='text-align:center;padding:16px 4px 14px;'>"
+            "<div style='text-align:center;padding:16px 4px 14px'>"
             "<div style='display:inline-flex;align-items:center;justify-content:center;"
             "width:54px;height:54px;"
             "background:linear-gradient(135deg,#2d6a4f,#0f2318);"
@@ -30,7 +37,7 @@ def show_sidebar(limpar_cookie_fn) -> str:
             f"SmartLarder Pro</div>"
             f"<div style='color:#74c69d;font-size:0.77rem;margin-bottom:7px;'>👤 {nome}</div>"
             f"<span style='background:{rb};color:{rc};padding:3px 12px;border-radius:20px;"
-            f"font-size:0.71rem;font-weight:700;'>{role.upper()}</span>"
+            f"font-size:0.71rem;font-weight:700;'>{str(role_raw).upper()}</span>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -67,13 +74,13 @@ def show_sidebar(limpar_cookie_fn) -> str:
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Dashboard"
 
-        # Monta menu por role
+        # Monta o menu dinamicamente tratando flexibilidade de cargos
         pages = list(_PAGES_BASE)
-        if role in ("admin", "comercial"):
-            pages.append(("🏭", "Fornecedores"))
-            pages.append(("📉", "Perdas"))
-        if role == "admin":
-            pages.append(("👥", "Usuários"))
+        if role in ("admin", "comercial") or "admin" in role:
+            pages.insert(5, ("🏭", "Fornecedores"))
+            pages.insert(6, ("📉", "Perdas"))
+        if "admin" in role:
+            pages.insert(7, ("👥", "Usuários"))
 
         for icon, name in pages:
             ativo = st.session_state.current_page == name
