@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import os
 import hashlib
 from streamlit_cookies_manager import EncryptedCookieManager
-from supabase import create_client, Client
+from supabase import create_client
 
 st.set_page_config(
     page_title="SmartLarder Pro",
@@ -12,205 +11,118 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS — aspas simples no HTML para evitar SyntaxError
-_CSS = (
-    "<style>"
-    "[data-testid='stSidebarNav']{display:none !important;}"
-    "button[data-testid='stSidebarCollapseButton']{"
-    "visibility:visible !important;display:flex !important;"
-    "background-color:#2d6a4f !important;color:white !important;"
-    "z-index:999999 !important;}"
-    ".block-container{padding-top:1rem !important;}"
-    "</style>"
+# Ocultar navegação padrão do Streamlit
+st.markdown(
+    "<style>[data-testid='stSidebarNav']{display:none !important;} "
+    ".block-container{padding-top:1rem !important;}</style>", 
+    unsafe_allow_html=True
 )
-st.markdown(_CSS, unsafe_allow_html=True)
 
-# PWA — aspas simples no HTML para evitar SyntaxError
-_PWA = (
-    "<meta name='viewport' content='width=device-width,initial-scale=1,"
-    "maximum-scale=1,user-scalable=no,viewport-fit=cover'>"
-    "<meta name='apple-mobile-web-app-capable' content='yes'>"
-    "<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>"
-    "<meta name='mobile-web-app-capable' content='yes'>"
-    "<style>"
-    "html{overflow:hidden;height:100%;}"
-    "body{height:100%;overflow:auto;-webkit-overflow-scrolling:touch;}"
-    "</style>"
-)
-st.markdown(_PWA, unsafe_allow_html=True)
-
-# ── Cookie Manager ────────────────────────────────────────────────────────────
+# Inicializar Gerenciador de Cookies
 _COOKIE_PASSWORD = st.secrets.get("COOKIES_PASSWORD", "smartlarder-fallback-32chars!!")
 cookies = EncryptedCookieManager(prefix="smartlarder/", password=_COOKIE_PASSWORD)
 if not cookies.ready():
     st.stop()
 
-
-# ── Funções de cookie ─────────────────────────────────────────────────────────
-
 def _salvar_cookie(user: dict):
     try:
         cookies["sl_user_id"]    = str(user.get("id", ""))
         cookies["sl_username"]   = str(user.get("username", ""))
-        cookies["sl_nome"]       = str(user.get("nome", "") or user.get("name", ""))
+        cookies["sl_nome"]       = str(user.get("nome", ""))
         cookies["sl_role"]       = str(user.get("role", "domestico"))
         cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
-        cookies["sl_token"]      = hashlib.sha256(
-            str(user.get("senha_hash", "")).encode()
-        ).hexdigest()[:16]
+        cookies["sl_token"]      = hashlib.sha256(str(user.get("senha_hash", "")).encode()).hexdigest()[:16]
         cookies.save()
-    except Exception:
-        pass
-
+    except: pass
 
 def _limpar_cookie():
     try:
-        for k in ["sl_user_id","sl_username","sl_nome",
-                  "sl_role","sl_empresa_id","sl_token"]:
-            if k in cookies:
-                cookies[k] = ""
+        for k in ["sl_user_id","sl_username","sl_nome","sl_role","sl_empresa_id","sl_token"]:
+            if k in cookies: cookies[k] = ""
         cookies.save()
-    except Exception:
-        pass
-
+    except: pass
 
 def _restaurar_cookie():
-    """
-    Lê o cookie do navegador e valida contra o Supabase.
-    Se válido, preenche o session_state sem pedir login.
-    """
     try:
-        user_id    = cookies.get("sl_user_id", "")
-        username   = cookies.get("sl_username", "")
-        token      = cookies.get("sl_token", "")
-        empresa_id = cookies.get("sl_empresa_id", "1")
-        role       = cookies.get("sl_role", "domestico")
-        nome       = cookies.get("sl_nome", "")
+        user_id = cookies.get("sl_user_id", "")
+        username = cookies.get("sl_username", "")
+        token = cookies.get("sl_token", "")
+        if not user_id or not username or not token: return
 
-        if not user_id or not username or not token:
-            return
+        db = st.session_state.get("db")
+        if not db: return
 
-        db  = st.session_state.get("db")
-        if db is None:
-            return
-
-        res = (db.table("usuarios")
-                 .select("id,senha_hash,ativo")
-                 .eq("id", int(user_id))
-                 .eq("username", username)
-                 .eq("ativo", 1)
-                 .execute())
-
-        row = res.data[0] if res.data else None
-        if not row:
+        res = db.table("usuarios").select("id,senha_hash,ativo").eq("id", int(user_id)).eq("username", username).eq("ativo", 1).execute()
+        if not res.data:
             _limpar_cookie(); return
 
-        token_esperado = hashlib.sha256(
-            str(row["senha_hash"]).encode()
-        ).hexdigest()[:16]
-
-        if token != token_esperado:
+        row = res.data[0]
+        if hashlib.sha256(str(row["senha_hash"]).encode()).hexdigest()[:16] != token:
             _limpar_cookie(); return
 
-        # Sessão restaurada com sucesso
-        st.session_state["logged_in"]     = True
-        st.session_state["user_id"]       = int(user_id)
-        st.session_state["username"]      = username
-        st.session_state["nome_completo"] = nome
-        st.session_state["role"]          = role
-        st.session_state["empresa_id"]    = int(empresa_id)
-        st.session_state["alerts"]        = {}
-        st.session_state["batch_list"]    = []
+        st.session_state["logged_in"] = True
+        st.session_state["user_id"] = int(user_id)
+        st.session_state["username"] = username
+        st.session_state["nome_completo"] = cookies.get("sl_nome", "Usuário")
+        st.session_state["role"] = cookies.get("sl_role", "domestico")
+        st.session_state["empresa_id"] = int(cookies.get("sl_empresa_id", "1"))
+    except: _limpar_cookie()
 
-    except Exception:
-        _limpar_cookie()
-
-
-# ── App principal ─────────────────────────────────────────────────────────────
-
-def main():
-    # 1. Inicializa o cliente Supabase diretamente e guarda no session_state
-    if "db" not in st.session_state:
-        try:
-            url: str = st.secrets["SUPABASE_URL"]
-            key: str = st.secrets["SUPABASE_KEY"]
-            st.session_state["db"] = create_client(url, key)
-        except Exception as e:
-            st.error(f"Erro ao conectar diretamente ao Supabase: {e}")
-            st.stop()
-
-    # 2. Defaults de sessão
-    _defaults = {
-        "logged_in":     False,
-        "user_id":       None,
-        "empresa_id":    None,
-        "role":          "",
-        "username":      "",
-        "nome_completo": "",
-        "current_page":  "Dashboard",
-        "alerts":        {},
-        "batch_list":    [],
-    }
-    for k, v in _defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-    # 3. Tenta restaurar sessão do cookie (quando servidor reiniciou)
-    if not st.session_state.get("logged_in"):
-        _restaurar_cookie()
-
-    # 4. Bloco de segurança — redireciona para login se não autenticado
-    if (not st.session_state.get("logged_in")
-            or st.session_state.get("user_id") is None
-            or st.session_state.get("empresa_id") is None):
-        from telas.login import show_login
-        show_login(cookies, _salvar_cookie)
+# Conexão Supabase
+if "db" not in st.session_state:
+    try:
+        st.session_state["db"] = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    except Exception as e:
+        st.error(f"Erro de conexão com o banco: {e}")
         st.stop()
 
-    # 5. Sidebar e roteamento
-    from telas.sidebar import show_sidebar
-    page = show_sidebar(_limpar_cookie)
+if not st.session_state.get("logged_in"):
+    _restaurar_cookie()
 
-    def _load(fn):
-        try:
-            fn()
-        except Exception as e:
-            import traceback
-            st.error(f"Erro na página {page}: {e}")
-            st.code(traceback.format_exc())
+if not st.session_state.get("logged_in") or st.session_state.get("user_id") is None:
+    from telas.login import show_login
+    show_login(cookies, _salvar_cookie)
+    st.stop()
 
-    # Padroniza as variáveis de texto para evitar problemas de capitulação
-    user_role = str(st.session_state.get("role", "")).lower().strip()
-    session_user = str(st.session_state.get("username", "") or st.session_state.get("sl_username", "")).lower().strip()
-    nome_user = str(st.session_state.get("nome_completo", "")).lower()
+# Carregar Sidebar
+from telas.sidebar import show_sidebar
+page = show_sidebar(_limpar_cookie)
 
-    # 6. Roteamento Inteligente
-    if page == "Dashboard":
-        from telas.dashboard import show_dashboard; _load(show_dashboard)
-    elif page == "Produtos":
-        from telas.produtos import show_produtos; _load(show_produtos)
-    elif page == "Cadastrar":
-        from telas.cadastro import show_cadastro; _load(show_cadastro)
-    elif page == "Recepção de Carga":
-        from telas.recepcao import show_recepcao; _load(show_recepcao)
-    elif page == "Lista de Compras":
-        from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
-    elif page == "Alertas":
-        from telas.alertas import show_alertas; _load(show_alertas)
-    elif page == "Relatórios":
-        from telas.relatorios import show_relatorios; _load(show_relatorios)
-    elif page == "Fornecedores":
+def _load(fn):
+    try: fn()
+    except Exception as e:
+        st.error(f"Erro ao carregar a página {page}: {e}")
+
+# Roteador de Páginas
+user_role = str(st.session_state.get("role", "")).lower().strip()
+session_user = str(st.session_state.get("username", "")).lower().strip()
+
+if page == "Dashboard":
+    from telas.dashboard import show_dashboard; _load(show_dashboard)
+elif page == "Produtos":
+    from telas.produtos import show_produtos; _load(show_produtos)
+elif page == "Cadastrar":
+    from telas.cadastro import show_cadastro; _load(show_cadastro)
+elif page == "Recepção de Carga":
+    from telas.recepcao import show_recepcao; _load(show_recepcao)
+elif page == "Lista de Compras":
+    from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
+elif page == "Alertas":
+    from telas.alertas import show_alertas; _load(show_alertas)
+elif page == "Relatórios":
+    from telas.relatorios import show_relatorios; _load(show_relatorios)
+elif page == "Fornecedores":
+    try:
         from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
-    elif page == "Perdas":
+    except: st.info("Módulo de Fornecedores em desenvolvimento.")
+elif page == "Perdas":
+    try:
         from telas.perdas import show_perdas; _load(show_perdas)
-    elif page == "Usuários":
-        if "admin" in user_role or "alex" in session_user or "alex" in nome_user:
-            from telas.usuarios import show_usuarios; _load(show_usuarios)
-        else:
-            st.error("🔒 Acesso restrito a administradores.")
-    elif page == "Ajuda":
-        from telas.ajuda import show_ajuda; _load(show_ajuda)
-
-
-if __name__ == "__main__":
-    main()
+    except: st.info("Módulo de Perdas em desenvolvimento.")
+elif page == "Usuários":
+    if "admin" in user_role or "alex" in session_user:
+        from telas.usuarios import show_usuarios; _load(show_usuarios)
+    else:
+        st.error("🔒 Acesso restrito a administradores.")
+elif page == "Ajuda":
+    from telas.ajuda import show_ajuda; _load(show_ajuda)
