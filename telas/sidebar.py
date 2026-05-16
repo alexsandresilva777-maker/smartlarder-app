@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 
-# Aba 'Ajuda' adicionada na base para que todos os perfis tenham acesso
 _PAGES_BASE = [
     ("🏠", "Dashboard"),
     ("📋", "Produtos"),
@@ -13,17 +12,20 @@ _PAGES_BASE = [
     ("❓", "Ajuda"),
 ]
 
-
 def show_sidebar(limpar_cookie_fn) -> str:
-    # Captura o role e força letras minúsculas sem espaços para evitar quebras por string mal formatada
     role_raw = st.session_state.get("role", "domestico")
     role = str(role_raw).lower().strip()
-    
+    username = str(st.session_state.get("username", "")).lower().strip()
     nome = st.session_state.get("nome_completo", "Usuário")
     
-    # Mapeamento de cores resiliente ao formato da string
-    rc = {"admin": "#e74c3c", "comercial": "#e67e22", "domestico": "#2d6a4f"}.get(role, "#2d6a4f")
-    rb = {"admin": "#fde8e8", "comercial": "#fff3cd", "domestico": "#e8f5e9"}.get(role, "#e8f5e9")
+    # Define se o utilizador atual atua como Administrador do sistema
+    # CORREÇÃO: Garante acesso de admin se o cargo contiver "admin" OU se for o utilizador principal 'alex'
+    is_admin_user = "admin" in role or username == "alex"
+    
+    # Ajusta as cores visuais com base no estatuto real de administrador
+    visual_role = "admin" if is_admin_user else role
+    rc = {"admin": "#e74c3c", "comercial": "#e67e22", "domestico": "#2d6a4f"}.get(visual_role, "#2d6a4f")
+    rb = {"admin": "#fde8e8", "comercial": "#fff3cd", "domestico": "#e8f5e9"}.get(visual_role, "#e8f5e9")
 
     with st.sidebar:
         st.markdown(
@@ -37,7 +39,7 @@ def show_sidebar(limpar_cookie_fn) -> str:
             f"SmartLarder Pro</div>"
             f"<div style='color:#74c69d;font-size:0.77rem;margin-bottom:7px;'>👤 {nome}</div>"
             f"<span style='background:{rb};color:{rc};padding:3px 12px;border-radius:20px;"
-            f"font-size:0.71rem;font-weight:700;'>{str(role_raw).upper()}</span>"
+            f"font-size:0.71rem;font-weight:700;'>{str(role_raw if not is_admin_user else 'ADMIN').upper()}</span>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -48,7 +50,6 @@ def show_sidebar(limpar_cookie_fn) -> str:
             unsafe_allow_html=True,
         )
 
-        # Alertas rápidos do session_state
         alerts = st.session_state.get("alerts", {})
         if alerts.get("vencidos"):
             st.markdown(
@@ -74,12 +75,11 @@ def show_sidebar(limpar_cookie_fn) -> str:
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Dashboard"
 
-        # Monta o menu dinamicamente tratando flexibilidade de cargos
         pages = list(_PAGES_BASE)
-        if role in ("admin", "comercial") or "admin" in role:
+        if is_admin_user or role == "comercial":
             pages.insert(5, ("🏭", "Fornecedores"))
             pages.insert(6, ("📉", "Perdas"))
-        if "admin" in role:
+        if is_admin_user:
             pages.insert(7, ("👥", "Usuários"))
 
         for icon, name in pages:
