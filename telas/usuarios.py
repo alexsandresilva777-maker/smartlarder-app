@@ -5,7 +5,7 @@ ROLES = ["operador", "gerente", "admin"]
 ROLE_LABEL = {"operador": "👷 Operador", "gerente": "👔 Gerente", "admin": "🔑 Admin"}
 
 def DB_listar_usuarios():
-    """Função isolada para listar utilizadores diretamente via cliente Supabase do app"""
+    """Função isolada para listar usuários diretamente via cliente Supabase do app"""
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     if not db:
@@ -18,7 +18,7 @@ def DB_listar_usuarios():
         return []
 
 def DB_criar_usuario(username, senha_hash, nome, role):
-    """Função isolada para inserir um novo utilizador no banco"""
+    """Função isolada para inserir um novo usuário com o tipo correto (inteiro)"""
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     if not db:
@@ -29,7 +29,7 @@ def DB_criar_usuario(username, senha_hash, nome, role):
             "senha_hash": senha_hash,
             "nome": nome,
             "role": role,
-            "ativo": True,
+            "ativo": 1,  # CORREÇÃO: Enviando 1 (inteiro) em vez de True (booleano)
             "empresa_id": empresa_id
         }
         db.table("usuarios").insert(data).execute()
@@ -39,7 +39,7 @@ def DB_criar_usuario(username, senha_hash, nome, role):
         return False
 
 def DB_excluir_usuario(user_id):
-    """Função isolada para remover um utilizador do banco"""
+    """Função isolada para remover um usuário do banco"""
     db = st.session_state.get("db")
     if not db:
         return False
@@ -67,7 +67,7 @@ def show_usuarios():
                     col1.markdown(f"**{u.get('nome', 'Sem nome')}** (@{u.get('username', 'sem-username')})")
                     col2.markdown(f"Perfil: `{ROLE_LABEL.get(u.get('role'), u.get('role', 'operador'))}`")
                     
-                    # Evita que o utilizador logado se elimine a si próprio
+                    # Evita que o usuário logado se elimine por engano
                     if u.get('username') != st.session_state.get('username'):
                         if col3.button("🗑️ Remover", key=f"del_{u.get('id')}"):
                             if DB_excluir_usuario(u.get("id")):
@@ -78,7 +78,7 @@ def show_usuarios():
                 st.markdown("<hr style='margin:10px 0; border-color:#eee;'>", unsafe_allow_html=True)
                 
     with tab2:
-        with st.form("novo_user_form_v4"):
+        with st.form("novo_user_form_v5"):
             n_nome = st.text_input("Nome Completo")
             n_user = st.text_input("Username (Nome de login)")
             n_pass = st.text_input("Senha", type="password")
@@ -86,8 +86,6 @@ def show_usuarios():
             
             if st.form_submit_button("Salvar Usuário", type="primary"):
                 if n_nome.strip() and n_user.strip() and n_pass.strip():
-                    # Nota: Se o Claude usar criptografia complexa nas senhas, passamos o texto limpo 
-                    # ou o hash conforme a estrutura existente do banco.
                     sucesso = DB_criar_usuario(n_user.strip(), n_pass, n_nome.strip(), n_role)
                     if sucesso:
                         st.success("🎉 Usuário criado com sucesso!")
