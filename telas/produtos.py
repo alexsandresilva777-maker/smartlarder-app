@@ -97,7 +97,8 @@ def _buscar_produtos_supabase(supabase, user_id, busca="", categoria="Todas", st
         return []
 
 
-def show_produtos(supabase): # Recebe o cliente instanciado do app.py
+def show_produtos(): # Alterado: sem argumentos na assinatura
+    supabase = st.session_state["db"] # Resgata a conexão da gaveta global
     user_id = st.session_state.get("user_id", 1)
     st.markdown("## 📋 Produtos em Estoque")
 
@@ -243,7 +244,7 @@ def _form_edicao(supabase, p, user_id):
                 "lote": lote, "fornecedor": fornecedor, "localizacao": localizacao,
                 "preco_custo": preco, "estoque_minimo": estoque_min, "observacoes": obs
             }).eq("id", p["id"]).execute()
-            st.success("✅ Produto atualizado!")
+            st.success("✅ Produto updated!")
         except Exception as e:
             st.error(f"Erro ao salvar: {e}")
         st.session_state.pop(f"edit_{p['id']}", None)
