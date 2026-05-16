@@ -182,4 +182,73 @@ def show_dashboard(supabase): # Recebe a conexão do app.py
                         labels={"valor":"R$","categoria":""},
                     )
                     fig2.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
-                    fig2.update_layout(showlegend
+                    fig2.update_layout(showlegend=False, coloraxis_showscale=False,
+                                       margin=dict(t=10,b=10,l=10,r=80), height=255,
+                                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                       xaxis=dict(showticklabels=False, showgrid=False))
+                    st.plotly_chart(fig2, use_container_width=True)
+                else:
+                    st.info("Cadastre preços de custo para ver o valor por categoria.")
+            else:
+                st.info("Cadastre preços de custo para ver o valor por categoria.")
+        else:
+            st.info("Sem dados de categoria.")
+
+    # ── Itens críticos ─────────────────────────────────────────────────────────
+    st.markdown("#### 🔔 Itens que precisam de atenção")
+    
+    proximos = sorted(
+        [p for p in todos if p.get("status") in ("critico","atencao","vencido")],
+        key=lambda x: x.get("dias_para_vencer", 999),
+    )[:10]
+
+    if proximos:
+        cols = st.columns(2)
+        for i, p in enumerate(proximos):
+            status = p.get("status", "ok")
+            dias = p.get("dias_para_vencer", 0)
+            if status == "vencido":
+                cor="#e74c3c"; bg="#fde8e8"; emoji="🔴"; txt="VENCIDO"
+            elif status == "critico":
+                cor="#e67e22"; bg="#fff3cd"; emoji="🔴"; txt=f"{dias}d"
+            else:
+                cor="#f0a500"; bg="#fffde7"; emoji="🟡"; txt=f"{dias}d"
+                
+            preco_txt = _fmt_brl(p["preco_custo"]) if p.get("preco_custo") else ""
+            loc_txt   = f" · 📍 {p['localizacao']}" if p.get("localizacao") else ""
+            with cols[i%2]:
+                st.markdown(
+                    f"""<div style='display:flex;align-items:center;justify-content:space-between;
+                        padding:10px 14px;background:{bg};border-left:4px solid {cor};
+                        border-radius:0 10px 10px 0;margin-bottom:8px;'>
+                      <div>
+                        <div style='font-weight:600;font-size:0.88rem;'>{emoji} {p.get('nome', 'Sem nome')}</div>
+                        <div style='color:#777;font-size:0.76rem;margin-top:2px;'>
+                          {p.get('categoria', 'Geral')} · {p.get('quantidade', 0)} {p.get('unidade', 'un')}
+                          {" · "+preco_txt if preco_txt else ""}{loc_txt}
+                        </div>
+                      </div>
+                      <span style='background:{cor};color:white;padding:3px 10px;
+                                   border-radius:20px;font-size:0.76rem;font-weight:700;
+                                   white-space:nowrap;margin-left:10px;'>{txt}</span>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.success("🎉 Tudo sob controle! Nenhum produto crítico no momento.")
+
+    # ── Movimentações ──────────────────────────────────────────────────────────
+    st.markdown("#### 📈 Movimentações — últimos 30 dias")
+    if mov:
+        df_mov = pd.DataFrame(mov)
+        fig3 = px.bar(df_mov, x="dia", y="total", color="tipo",
+                      color_discrete_map={"entrada":"#2d6a4f","saida":"#e74c3c"},
+                      barmode="group",
+                      labels={"dia":"Data","total":"Quantidade","tipo":"Tipo"})
+        fig3.update_layout(margin=dict(t=10,b=10,l=0,r=0), height=220,
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           legend=dict(orientation="h",y=1.12,x=0))
+        fig3.update_traces(marker_line_width=0)
+        st.plotly_chart(fig3, use_container_width=True)
+    else:
+        st.info("Sem movimentações registradas ainda.")
