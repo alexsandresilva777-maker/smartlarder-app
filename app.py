@@ -135,12 +135,17 @@ def _limpar_cookie():
 # ── App principal ─────────────────────────────────────────────────────────────
 
 def main():
-    from utils.database import init_db
-    try:
-        init_db()
-    except Exception as e:
-        st.error(f"Erro no banco: {e}")
-        st.stop()
+    # Removido o init_db antigo que estava quebrando o app
+    
+    defaults = {
+        "logged_in":    False,
+        "user_id":      None,
+        "empresa_id":   None,
+        "role":         "",
+        "current_page": "Dashboard",
+        "alerts":       {},
+        "batch_list":   [],
+    }
 
     defaults = {
         "logged_in":    False,
