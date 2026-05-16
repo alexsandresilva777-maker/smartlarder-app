@@ -1,39 +1,158 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-from datetime import date
-from utils.database import gerar_lista_compras
+from datetime import date, datetime, timedelta
+import pytz
+
+_TZ = pytz.timezone("America/Sao_Paulo")
 
 def _fmt_brl(valor: float) -> str:
-    return f"R$ {valor:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def _processar_lista_inteligente(supabase, empresa_id) -> list:
+    """Calcula dinamicamente a necessidade de recompra com base em estoque_minimo e saídas"""
+    try:
+        # 1. Busca todos os produtos da empresa
+        res_prod = supabase.table("produtos").select("*").eq("empresa_id", empresa_id).execute()
+        if not res_prod.data:
+            return []
+            
+        produtos = res_prod.data
+        
+        # 2. Busca saídas dos últimos 30 dias para cálculo de consumo médio
+        data_limite = (datetime.now(_TZ) - timedelta(days=30)).isoformat()
+        res_mov = supabase.table("movimentacoes")\
+            .select("produto_id, quantidade")\
+            .eq("empresa_id", empresa_id)\
+            .eq("tipo", "saida")\
+            .gte("created_at", data_limite)\
+            .execute()
+            
+        movimentacoes = res_mov.data or []
+        
+        # Consolida consumo por produto
+        consumo_map = {}
+        for m in movimentacoes:
+            pid = m.get("produto_id")
+            qtd = float(m.get("quantidade", 0) or 0)
+            consumo_map[pid] = consumo_map.get(pid, 0.0) + qtd
+
+        lista_sugestoes = []
+        hoje = datetime.now(_TZ).date()
+
+        for p in produtos:
+            pid = p["id"]
+            nome = p["nome"]
+            categoria = p.get("categoria", "Outros")
+            unidade = p.get("unidade", "un")
+            qtd_atual = float(p.get("quantidade", 0) or 0)
+            qtd_minima = float(p.get("quantidade_minima", 0) or 0)
+            preco_custo = float(p.get("preco_custo", 0) or 0)
+            
+            # Localização servirá de fallback descritivo caso queira mapear fornecedor
+            localizacao = p.get("localizacao") or "Não Informado"
+            
+            # Cálculo do Consumo Diário (Média dos últimos 30 dias)
+            total_saidas_30_dias = consumo_map.get(pid, 0.0)
+            consumo_dia = total_saidas_30_dias / 30.0
+            
+            motivos = []
+            urgencia = None
+            sugerido = 0.0
+            
+            # Regra 1: Validade crítica ou vencida
+            val_raw = p.get("data_validade")
+            if val_raw:
+                try:
+                    if isinstance(val_raw, str):
+                        val_date = datetime.strptime(val_raw[:10], "%Y-%m-%d").date()
+                    else:
+                        val_date = val_raw
+                    dias_restantes = (val_date - hoje).days
+                    if dias_restantes < 0:
+                        urgencia = "alta"
+                        motivos.append("Produto Vencido")
+                    elif dias_restantes <= 7:
+                        urgencia = "alta"
+                        motivos.append(f"Validade Crítica ({dias_restantes} dias)")
+                except Exception:
+                    pass
+
+            # Regra 2: Abaixo do estoque mínimo
+            if qtd_minima > 0 and qtd_atual < qtd_minima:
+                if not urgencia:
+                    urgencia = "alta" if qtd_atual == 0 else "media"
+                motivos.append("Abaixo do Mínimo")
+                # Sugere repor para o mínimo + uma margem de segurança baseada no consumo
+                sugerido = (qtd_minima - qtd_atual) + (consumo_dia * 7)
+            
+            # Regra 3: Risco de desabastecimento por consumo
+            if consumo_dia > 0 and qtd_atual > 0:
+                dias_duracao = qtd_atual / consumo_dia
+                if dias_duracao <= 5 and "Abaixo do Mínimo" not in motivos:
+                    urgencia = "alta"
+                    motivos.append(f"Esgota em {int(dias_duracao)} dias")
+                    sugerido = max(sugerido, consumo_dia * 15) # Sugere estoque para 15 dias
+
+            # Se o item precisa de atenção, consolida na lista
+            if urgencia and (sugerido > 0 or qtd_atual == 0):
+                if sugerido <= 0:
+                    sugerido = qtd_minima if qtd_minima > 0 else 1.0 # Fallback de segurança
+                
+                lista_sugestoes.append({
+                    "id": pid,
+                    "nome": nome,
+                    "categoria": categoria,
+                    "fornecedor": localizacao,
+                    "qtd_atual": qtd_atual,
+                    "estoque_min": qtd_minima,
+                    "consumo_dia": consumo_dia,
+                    "sugerido": round(sugerido, 1),
+                    "preco_custo": preco_custo,
+                    "urgencia": urgencia,
+                    "motivos": motivos if motivos else ["Reposição Preventiva"],
+                    "unidade": unidade
+                })
+
+        # Ordena por urgência (alta primeiro)
+        lista_sugestoes.sort(key=lambda x: 0 if x["urgencia"] == "alta" else 1)
+        return lista_sugestoes
+
+    except Exception as e:
+        st.error(f"Erro ao computar lista de compras: {e}")
+        return []
 
 def show_lista_compras():
-    user_id = st.session_state.get("user_id", 1)
+    supabase = st.session_state.get("db")
+    empresa_id = st.session_state.get("empresa_id", 1)
+    
     st.markdown("## 🛒 Lista de Compras Inteligente")
 
     st.info(
         "🧠 **Como funciona?** O sistema analisa o **estoque atual vs mínimo configurado** "
-        "e o **consumo médio dos últimos 30 dias** para estimar quando cada item acabará. "
-        "Configure o Estoque Mínimo em cada produto para obter sugestões mais precisas."
+        "e o **consumo médio dos últimos 30 dias** registrados nas movimentações para estimar demandas. "
+        "Configure o Estoque Mínimo no cadastro de produtos para obter sugestões perfeitamente refinadas."
     )
 
-    with st.spinner("Analisando estoque e consumo..."):
-        lista = gerar_lista_compras(user_id)
+    if supabase is None:
+        st.error("Conexão com o banco de dados indisponível.")
+        return
+
+    with st.spinner("Analisando estoque e histórico de consumo dinâmico..."):
+        lista = _processar_lista_inteligente(supabase, empresa_id)
 
     if not lista:
         st.success(
             "🎉 **Estoque saudável!** Nenhum item precisa ser recomprado agora.\n\n"
-            "**Dicas:** Configure o Estoque Mínimo de cada produto (Produtos → ✏️ Editar) "
-            "e registre saídas regularmente para alimentar o cálculo de consumo médio."
+            "**Dicas:** Configure a Quantidade Mínima de cada produto (Estoque → ✏️ Editar) "
+            "e lembre-se de registrar as saídas regularmente para alimentar a inteligência de consumo."
         )
         return
 
-    # ── Resumo ────────────────────────────────────────────
-    alta  = [i for i in lista if i["urgencia"]=="alta"]
-    media = [i for i in lista if i["urgencia"]=="media"]
-    valor_total = sum(
-        i["sugerido"] * i["preco_custo"]
-        for i in lista if i["preco_custo"]
-    )
+    # ── Resumo das Urgências ────────────────────────────────────────────
+    alta  = [i for i in lista if i["urgencia"] == "alta"]
+    media = [i for i in lista if i["urgencia"] == "media"]
+    valor_total = sum(i["sugerido"] * i["preco_custo"] for i in lista if i["preco_custo"])
 
     r1, r2, r3 = st.columns(3)
     with r1:
@@ -70,7 +189,7 @@ def show_lista_compras():
     df_exp = pd.DataFrame([{
         "Produto":       i["nome"],
         "Categoria":     i["categoria"],
-        "Fornecedor":    i["fornecedor"],
+        "Referência/Local": i["fornecedor"],
         "Estoque Atual": f"{i['qtd_atual']} {i['unidade']}",
         "Est. Mínimo":   f"{i['estoque_min']} {i['unidade']}",
         "Consumo/Dia":   f"{i['consumo_dia']:.2f}",
@@ -91,14 +210,14 @@ def show_lista_compras():
 
     st.markdown("---")
 
-    # ── Itens por urgência ─────────────────────────────────
+    # ── Renderização dos Cards na Tela ─────────────────────────────────
     grupos = [
-        ("alta",  "🚨 Urgência Alta — Comprar Imediatamente",  "#e74c3c","#fff8f8"),
-        ("media", "⚠️ Urgência Média — Comprar em Breve",       "#e67e22","#fffaf0"),
+        ("alta",  "🚨 Urgência Alta — Comprar Imediatamente",  "#e74c3c", "#fff8f8"),
+        ("media", "⚠️ Urgência Média — Comprar em Breve",       "#e67e22", "#fffaf0"),
     ]
 
     for urgencia, titulo, cor, bg in grupos:
-        grupo = [i for i in lista if i["urgencia"]==urgencia]
+        grupo = [i for i in lista if i["urgencia"] == urgencia]
         if not grupo:
             continue
 
@@ -112,12 +231,11 @@ def show_lista_compras():
         for item in grupo:
             custo_total  = item["sugerido"] * item["preco_custo"]
             custo_txt    = _fmt_brl(custo_total) if item["preco_custo"] else "—"
-            consumo_txt  = (f"{item['consumo_dia']:.2f}/dia"
-                            if item["consumo_dia"] > 0 else "sem histórico")
+            consumo_txt  = f"{item['consumo_dia']:.2f}/dia" if item["consumo_dia"] > 0 else "Sem histórico"
 
             motivos_html = "".join(
-                f"<span style='background:#f0f0f0;color:#555;padding:2px 8px;"
-                f"border-radius:20px;font-size:0.74rem;margin-right:4px;'>{m}</span>"
+                f"<span style='background:#eec5c5 if urgencia=='alta' else #fce8db;color:#333;padding:2px 8px;"
+                f"border-radius:20px;font-size:0.74rem;margin-right:4px;font-weight:500;'>{m}</span>"
                 for m in item["motivos"]
             )
 
@@ -132,24 +250,23 @@ def show_lista_compras():
                         {item['nome']}
                       </div>
                       <div style='color:#666;font-size:0.78rem;margin:3px 0;'>
-                        {item['categoria']} · {item['fornecedor']} · Consumo: {consumo_txt}
+                        {item['categoria']} · Obs/Ref: {item['fornecedor']} · Giro: {consumo_txt}
                       </div>
-                      <div style='margin-top:4px;'>{motivos_html}</div>
+                      <div style='margin-top:6px;'>{motivos_html}</div>
                     </div>
                     <div style='text-align:right;white-space:nowrap;'>
                       <div style='font-size:0.81rem;color:#555;'>
                         Atual: <strong>{item['qtd_atual']} {item['unidade']}</strong>
                       </div>
                       <div style='font-size:0.81rem;color:#555;'>
-                        Sugerido: <strong>{item['sugerido']} {item['unidade']}</strong>
+                        Mínimo: <strong>{item['estoque_min']} {item['unidade']}</strong>
                       </div>
-                      <div style='font-size:0.82rem;color:#1a237e;font-weight:600;'>
-                        {custo_txt}
+                      <div style='font-size:0.85rem;color:#1a237e;font-weight:700;margin-top:2px;'>
+                        Sugerido: <span style='color:#2d6a4f;'>+{item['sugerido']} {item['unidade']}</span>
                       </div>
-                      <span style='background:{cor};color:white;padding:2px 10px;
-                                   border-radius:20px;font-size:0.72rem;font-weight:700;'>
-                        {urgencia.upper()}
-                      </span>
+                      <div style='font-size:0.82rem;color:#1a237e;font-weight:600;margin-bottom:4px;'>
+                        Custo: {custo_txt}
+                      </div>
                     </div>
                   </div>
                 </div>""",
@@ -157,7 +274,3 @@ def show_lista_compras():
             )
 
     st.markdown("---")
-    st.markdown(
-        "> 💡 **Para melhorar as sugestões:** Configure o **Estoque Mínimo** em cada produto "
-        "(Produtos → ✏️ Editar) e registre as **saídas** regularmente."
-    )
