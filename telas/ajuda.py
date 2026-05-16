@@ -2,68 +2,78 @@
 import streamlit as st
 
 def show_ajuda():
-    st.markdown("## 💡 Central de Ajuda e Boas Práticas")
+    # 1. SEÇÃO PRINCIPAL (O SEU TEXTO ORIGINAL INTEGRAIS)
+    st.markdown("# 📖 Manual de Operação & Documentação Técnica")
+    st.markdown("##### Bem-vindo à central de documentação oficial do **SmartLarder Pro**.")
+    st.markdown("Este ambiente consolida os procedimentos padrão e arquitetura de níveis de acesso do sistema de inventário.")
     st.markdown("---")
-    st.markdown("Seja bem-vindo ao **SmartLarder Pro**! Escolha o seu perfil abaixo para ver as dicas rápidas de utilização e garantir a máxima eficiência no controle do estoque.")
 
-    # Criação das abas para organizar o conteúdo por público-alvo
-    tab1, tab2, tab3, tab4 = st.tabs([
+    st.markdown("### 👥 1. Governança de Usuários e Perfis de Acesso")
+    st.markdown("""
+    O controle de credenciais no banco relacional Supabase obedece a três categorias operacionais rígidas:
+    
+    * **🔑 Administrador (admin):** Nível irrestrito. É o único perfil autorizado a gerenciar novos usuários, configurar parâmetros globais de infraestrutura, visualizar auditorias de perdas financeiras e extrair logs consolidados de movimentação.
+    * **👔 Gerente / Comercial:** Perfil voltado à gestão de compras e almoxarifado. Possui autonomia para catalogar fornecedores, lançar novos lotes, atualizar quantitativos e registrar justificativas de perdas físicas.
+    * **👷 Operador / Doméstico:** Perfil simplificado de rotina. Desenvolvido para consultas rápidas na despensa/estoque, geração automática de listas de compras e controle simples de entradas e saídas de mercadoria.
+    """)
+
+    st.markdown("### 📊 2. Arquitetura de Movimentações (Entradas e Saídas)")
+    st.markdown("""
+    Para assegurar a integridade dos relatórios estatísticos e do giro de estoque, os lançamentos devem seguir o padrão:
+    
+    * **🚚 Entrada Consolidada:** Realizada exclusivamente via aba *Recepção de Carga* para novos lotes de fornecedores cadastrados, exigindo a inclusão mandatória do preço de aquisição e data de validade.
+    * **📉 Consumo e Baixa Direta:** Registros de saídas parciais direto na listagem de *Produtos* reduzem o inventário imediatamente.
+    * **⚠️ Auditoria de Quebras/Vencimentos:** Itens impróprios para uso não devem ser apenas 'subtraídos' do estoque; devem ser formalizados no módulo *Perdas* para fins de dedução estatística.
+    """)
+
+    st.markdown("### 🔔 3. Ativação e Disparo do Alerta SMTP (E-mail)")
+    st.markdown("""
+    O SmartLarder Pro envia relatórios automatizados sobre vencimentos críticos. Para parametrizar o envio via servidores seguros da Google (Gmail):
+    
+    1. Acesse o painel de segurança da sua conta Google corporativa ou pessoal em [myaccount.google.com](https://myaccount.google.com).
+    2. Certifique-se de que a **Verificação em Duas Etapas** está activa.
+    3. Acesse o menu **Senhas de App** (App Passwords) e gere uma nova credencial nomeada como *'SmartLarder'*.
+    4. Insira a sequência gerada de **16 dígitos** no campo correspondente da aba *Alertas* dentro do sistema e valide o salvamento.
+    """)
+
+    st.markdown("### 🛠️ 4. Guia de Resolução de Erros de Conectividade")
+    st.markdown("""
+    * **Mensagem 'Access Denied / Privileges Required':** Indica que regras RLS (*Row Level Security*) na sua tabela do Supabase estão bloqueando o select do cliente anônimo. Execute o comando `GRANT SELECT ON public.tabela TO anon;` no editor SQL do Supabase.
+    * **🔒 Abas Administrativas Ocultas:** Clique no botão **🚪 Sair** no rodapé do menu esquerdo para expirar o cookie de sessão local e refaça a autenticação para renovar os privilégios.
+    """)
+
+    # 2. NOVA SEÇÃO ADICIONADA: DICAS DE MELHOR USO COMPLEMENTARES
+    st.markdown("---")
+    st.markdown("## 💡 Dicas de Melhor Uso por Público Alvo")
+    st.markdown("Para extrair o máximo de eficiência do aplicativo no dia a dia, siga as recomendações práticas abaixo:")
+
+    # Organização das dicas por abas visuais para manter a tela limpa
+    tab_com, tab_rep, tab_dom = st.tabs([
+        "🏪 Estabelecimentos Comerciais", 
         "👷 Promotores & Repositores", 
-        "🏠 Uso Doméstico", 
-        "🏪 Estabelecimentos Comerciais",
-        "❓ Dúvidas Frequentes"
+        "🏠 Donas de Casa / Doméstico"
     ])
 
-    # 1. ABA: PROMOTORES DE VENDAS E REPOSITORES
-    with tab1:
-        st.markdown("### 🚚 Guia Rápido para Promotores e Repositores")
+    with tab_com:
         st.markdown("""
-        Seu papel é fundamental para manter o estoque físico perfeitamente sincronizado com o sistema. Siga esta rotina:
-
-        * **Atenção Máxima na Recepção de Carga:** Ao receber novos paletes ou caixas, confira o código de barras (EAN) antes de guardar o produto na prateleira. Se o código não estiver cadastrado, use a aba **Cadastrar**.
-        * **Regra de Ouro (PVPS):** O primeiro que vence é o primeiro que sai. Ao abastecer as gôndolas ou o estoque, coloque sempre os produtos com **validade mais próxima na frente** e os mais novos atrás.
-        * **Registre as Perdas na Hora:** Encontrou uma embalagem rasgada, amassada ou um produto vencido no fundo da prateleira? Vá direto na aba **Perdas** e faça o registro para evitar furos no estoque.
-        * **Volume Inicial:** Quando cadastrar um item novo, lembre-se de lançar a quantidade que está entrando fisicamente no momento.
+        * **Campanhas de Queima de Estoque:** Monitore a aba **Alertas** todas as manhãs. Identificar produtos que vencem em até 7 dias permite criar promoções relâmpago, transformando o que seria perda em faturamento.
+        * **Segurança Operacional:** Nunca deixe o tablet ou computador da loja logado no perfil de *Admin*. Crie contas de *Operador* para a equipe de balcão e reposição para evitar alterações acidentais de estoque.
         """)
-        st.info("💡 **Dica de Campo:** Se o scanner de câmera não focar de primeira, certifique-se de que o código de barras está bem iluminado e sem reflexos da embalagem plástica.")
 
-    # 2. ABA: DONAS DE CASA (USO DOMÉSTICO)
-    with tab2:
-        st.markdown("### 🍏 Guia Rápido para Organização Doméstica")
+    with tab_rep:
         st.markdown("""
-        O SmartLarder Pro também é perfeito para evitar o desperdício de alimentos em casa e economizar na hora das compras!
-
-        * **Evite o Desperdício:** Monitore semanalmente a aba **Alertas**. O sistema avisa quais itens da sua despensa vão vencer nos próximos 7 dias. Planeje o cardápio da semana com base neles!
-        * **Lista de Compras Inteligente:** Antes de ir ao supermercado, consulte a aba **Lista de Compras**. O sistema gera automaticamente a lista dos itens que estão zerados ou abaixo do limite mínimo necessário para a sua casa.
-        * **Entrada e Saída Simples:** Criou o hábito de usar o sistema? Sempre que consumir o último item de uma caixa (como uma caixa de leite ou um pacote de arroz), atualize a quantidade para manter sua despensa real.
+        * **Regra Prática do PVPS:** Ao organizar as prateleiras ou gôndolas, aplique estritamente o conceito de *Primeiro que Vence, Primeiro que Sai*. Coloque os lotes novos sempre no fundo e puxe os antigos para a frente.
+        * **Sincronismo de Avarias:** Se uma embalagem quebrar ou amassar no manuseio, registre o descarte na aba **Perdas** no exato momento do ocorrido para manter o inventário confiável.
         """)
-        st.success("🏠 **Dica de Organização:** Separe sua despensa doméstica por categorias básicas no cadastro (ex: Alimentos, Limpeza, Higiene) para facilitar a visualização nos Relatórios.")
 
-    # 3. ABA: ESTABELECIMENTOS COMERCIAIS
-    with tab3:
-        st.markdown("### 🏪 Guia Rápido para Comércio (Mercearias, Padarias, Minimercados)")
+    with tab_dom:
         st.markdown("""
-        Para comércios, o controle rígido evita prejuízos financeiros e multas de fiscalização.
-
-        * **Auditoria de Validades:** Utilize a central de **Alertas** diariamente. Produtos vencidos expostos geram penalidades graves. Use o relatório para fazer promoções de queima de estoque (bota-fora) dos itens próximos ao vencimento.
-        * **Gestão por Perfis (Níveis de Acesso):** * Mantenha os seus repositores e caixas no perfil de **Operador** (eles apenas consultam e dão entrada/saída).
-            * Deixe o perfil de **Admin** apenas com a gerência para evitar alterações acidentais de senhas ou exclusão de dados.
-        * **Histórico de Movimentações:** Use o painel de **Relatórios** para entender o giro das suas mercadorias — descubra quais marcas vendem mais rápido e quais estão paradas ocupando espaço.
+        * **Planejamento de Cardápio:** Consulte os **Alertas** semanais para direcionar as refeições da casa com base nos ingredientes que estão mais próximos do vencimento, reduzindo o desperdício doméstico.
+        * **Lista de Compras Automatizada:** Antes de sair de casa para o supermercado, abra o aplicativo para verificar quais itens essenciais estão zerados, evitando compras redundantes ou esquecimentos.
         """)
-        st.warning("🔒 **Nota de Segurança:** Nunca compartilhe a senha do seu usuário Administrador. Cadastre um usuário individual para cada colaborador na aba **Usuários**.")
 
-    # 4. ABA: DÚVIDAS FREQUENTES
-    with tab4:
-        st.markdown("### ❓ Perguntas Frequentes (FAQ)")
-        
-        with st.expander("O sistema funciona sem internet?"):
-            st.write("Não. Como os dados de estoque e usuários ficam guardados com segurança na nuvem do Supabase, o aplicativo precisa de conexão com a internet (Wi-Fi ou dados móveis) para atualizar as informações em tempo real.")
-            
-        with st.expander("O que fazer se um código de barras não for reconhecido?"):
-            st.write("Verifique se o número digitado está correto. Se o produto for novo, vá até a aba **Cadastrar**, insira o código manualmente e preencha os dados do item pela primeira vez. Nas próximas consultas, ele será achado instantaneamente.")
-            
-        with st.expander("Os dados inseridos podem sumir ou resetar sozinhos?"):
-            st.write("Não! Toda vez que você salva um produto, uma carga ou um usuário, a informação é gravada permanentemente no seu banco de dados em nuvem. O aplicativo está blindado contra perdas de dados.")
-
+    # Rodapé de Suporte original mantido
     st.markdown("---")
-    st.caption("SmartLarder Pro — Sistema de Gestão e Monitoramento de Validades.")
+    c1, c2 = st.columns([6, 2])
+    c1.caption("SmartLarder Pro — Sistema de Gestão de Inventário e Validades.")
+    c2.markdown("✉️ Suporte ao Usuário: Contate o administrador do banco de dados da aplicação.")
