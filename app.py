@@ -136,7 +136,6 @@ def _limpar_cookie():
 
 def main():
     from utils.database import init_db
-
     try:
         init_db()
     except Exception as e:
