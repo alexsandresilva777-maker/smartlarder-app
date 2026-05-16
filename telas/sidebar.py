@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-#
 
-_PAGES = [
+_PAGES_BASE = [
     ("🏠", "Dashboard"),
     ("📋", "Produtos"),
     ("➕", "Cadastrar"),
@@ -13,39 +12,36 @@ _PAGES = [
 ]
 
 
-def show_sidebar() -> str:
-    user_id = st.session_state.get("user_id", 1)
-    role    = st.session_state.get("role", "operador")
-    nome    = st.session_state.get("nome_completo", "Usuário")
-    rc      = {"admin":"#e74c3c","gerente":"#e67e22","operador":"#2d6a4f"}.get(role,"#2d6a4f")
-    rb      = {"admin":"#fde8e8","gerente":"#fff3cd","operador":"#e8f5e9"}.get(role,"#e8f5e9")
+def show_sidebar(limpar_cookie_fn) -> str:
+    role       = st.session_state.get("role", "domestico")
+    nome       = st.session_state.get("nome_completo", "Usuário")
+    rc = {"admin":"#e74c3c","comercial":"#e67e22","domestico":"#2d6a4f"}.get(role,"#2d6a4f")
+    rb = {"admin":"#fde8e8","comercial":"#fff3cd","domestico":"#e8f5e9"}.get(role,"#e8f5e9")
 
     with st.sidebar:
         st.markdown(
-            f"""<div style='text-align:center;padding:16px 4px 14px;'>
-              <div style='display:inline-flex;align-items:center;justify-content:center;
-                          width:54px;height:54px;
-                          background:linear-gradient(135deg,#2d6a4f,#0f2318);
-                          border-radius:15px;font-size:28px;
-                          box-shadow:0 4px 16px rgba(45,106,79,.4);'>📦</div>
-              <div style='color:#d4f0df;font-size:1.02rem;font-weight:700;margin:9px 0 4px;'>
-                SmartLarder Pro
-              </div>
-              <div style='color:#74c69d;font-size:0.77rem;margin-bottom:7px;'>👤 {nome}</div>
-              <span style='background:{rb};color:{rc};padding:3px 12px;border-radius:20px;
-                           font-size:0.71rem;font-weight:700;letter-spacing:.06em;'>
-                {role.upper()}
-              </span>
-            </div>""",
+            "<div style='text-align:center;padding:16px 4px 14px;'>"
+            "<div style='display:inline-flex;align-items:center;justify-content:center;"
+            "width:54px;height:54px;"
+            "background:linear-gradient(135deg,#2d6a4f,#0f2318);"
+            "border-radius:15px;font-size:28px;"
+            "box-shadow:0 4px 16px rgba(45,106,79,.4);'>📦</div>"
+            f"<div style='color:#d4f0df;font-size:1rem;font-weight:700;margin:9px 0 4px;'>"
+            f"SmartLarder Pro</div>"
+            f"<div style='color:#74c69d;font-size:0.77rem;margin-bottom:7px;'>👤 {nome}</div>"
+            f"<span style='background:{rb};color:{rc};padding:3px 12px;border-radius:20px;"
+            f"font-size:0.71rem;font-weight:700;'>{role.upper()}</span>"
+            "</div>",
             unsafe_allow_html=True,
         )
 
         st.markdown(
-            "<div style='height:1px;background:linear-gradient(90deg,transparent,#2d6a4f,transparent);margin:0 8px 12px;'></div>",
+            "<div style='height:1px;background:linear-gradient(90deg,transparent,"
+            "#2d6a4f,transparent);margin:0 8px 12px;'></div>",
             unsafe_allow_html=True,
         )
 
-        # Alertas pós-login
+        # Alertas rápidos do session_state
         alerts = st.session_state.get("alerts", {})
         if alerts.get("vencidos"):
             st.markdown(
@@ -62,27 +58,22 @@ def show_sidebar() -> str:
                 unsafe_allow_html=True,
             )
 
-        # Badge do buffer de recepção
-        batch = st.session_state.get("batch_list", [])
-        if batch:
-            st.markdown(
-                f"<div style='background:rgba(45,106,79,.25);border:1px solid #52b788;"
-                f"border-radius:8px;padding:7px 12px;margin-bottom:5px;font-size:0.79rem;color:#95d5b2;'>"
-                f"📥 Buffer: <strong>{len(batch)}</strong> item(ns) aguardando commit</div>",
-                unsafe_allow_html=True,
-            )
-
         st.markdown(
-            "<div style='font-size:0.69rem;color:#4a8a5a;font-weight:700;letter-spacing:.1em;padding:8px 4px 5px;'>MENU</div>",
+            "<div style='font-size:0.69rem;color:#4a8a5a;font-weight:700;"
+            "letter-spacing:.1em;padding:8px 4px 5px;'>MENU</div>",
             unsafe_allow_html=True,
         )
 
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Dashboard"
 
-        pages = list(_PAGES)
+        # Monta menu por role
+        pages = list(_PAGES_BASE)
+        if role in ("admin", "comercial"):
+            pages.append(("🏭", "Fornecedores"))
+            pages.append(("📉", "Perdas"))
         if role == "admin":
-            pages.append(("👥","Usuários"))
+            pages.append(("👥", "Usuários"))
 
         for icon, name in pages:
             ativo = st.session_state.current_page == name
@@ -93,40 +84,13 @@ def show_sidebar() -> str:
                 st.rerun()
 
         st.markdown(
-            "<div style='height:1px;background:linear-gradient(90deg,transparent,#2d6a4f,transparent);margin:12px 8px 8px;'></div>",
+            "<div style='height:1px;background:linear-gradient(90deg,transparent,"
+            "#2d6a4f,transparent);margin:12px 8px 8px;'></div>",
             unsafe_allow_html=True,
         )
 
-        # Ajuda
-        with st.expander("❓ Ajuda — Como usar"):
-            st.markdown("""
-**🚀 Primeiros Passos**
-Login: `admin` / `admin123` — troque a senha!
-
-**📥 Recepção de Carga**
-Bipe vários produtos seguidos → commit único no final.
-
-**📷 Código de Barras**
-EAN 8/12/13 dígitos → busca automática.
-Código curto (001) → cadastro manual.
-
-**🛒 Lista de Compras**
-Baseada em estoque mínimo + consumo médio dos últimos 30 dias.
-
-**👥 Perfis**
-👷 Operador · 👔 Gerente · 🔑 Admin
-            """)
-
-        st.markdown("")
-
-        # Logoff — limpa sessão completamente
         if st.button("🚪  Sair", use_container_width=True):
-            # Limpa cookie antes de destruir a sessão
-            try:
-                from app import _limpar_cookie
-                _limpar_cookie()
-            except Exception:
-                pass
+            limpar_cookie_fn()
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
