@@ -18,18 +18,19 @@ def DB_listar_usuarios():
         return []
 
 def DB_criar_usuario(username, senha_hash, nome, role):
-    """Função isolada para inserir um novo usuário com o tipo correto (inteiro)"""
+    """Função isolada para inserir um novo usuário deixando o banco gerar o ID automaticamente"""
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     if not db:
         return False
     try:
+        # CORREÇÃO: Não enviamos o campo 'id' para evitar violação de chave primária duplicada
         data = {
             "username": username,
             "senha_hash": senha_hash,
             "nome": nome,
             "role": role,
-            "ativo": 1,  # CORREÇÃO: Enviando 1 (inteiro) em vez de True (booleano)
+            "ativo": 1,
             "empresa_id": empresa_id
         }
         db.table("usuarios").insert(data).execute()
@@ -78,7 +79,7 @@ def show_usuarios():
                 st.markdown("<hr style='margin:10px 0; border-color:#eee;'>", unsafe_allow_html=True)
                 
     with tab2:
-        with st.form("novo_user_form_v5"):
+        with st.form("novo_user_form_v6"):
             n_nome = st.text_input("Nome Completo")
             n_user = st.text_input("Username (Nome de login)")
             n_pass = st.text_input("Senha", type="password")
