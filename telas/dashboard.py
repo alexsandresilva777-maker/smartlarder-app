@@ -5,17 +5,14 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
 import pytz
-from utils.database import get_stats, listar_produtos, get_movimentacoes_chart
 
 _TZ = pytz.timezone("America/Sao_Paulo")
-
 
 def _fmt_brl(valor: float) -> str:
     return f"R$ {valor:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
-
 def _kpi_card(col, emoji_label: str, valor, cor: str, bg: str, border: str,
-              prefixo="", sufixo="", help_txt=""):
+             prefixo="", sufixo="", help_txt=""):
     with col:
         tooltip = f" title='{help_txt}'" if help_txt else ""
         st.markdown(
@@ -32,8 +29,71 @@ def _kpi_card(col, emoji_label: str, valor, cor: str, bg: str, border: str,
             unsafe_allow_html=True,
         )
 
+def _buscar_dados_supabase(supabase, user_id: int):
+    """Substitui o antigo utils.database puxando os dados reais do Supabase"""
+    stats = {
+        "total": 0, "vencidos": 0, "criticos": 0, "atencao": 0, "ok": 0,
+        "total_estoque": 0.0, "gasto_mensal": 0.0, "abaixo_minimo": 0,
+        "capital_em_risco": 0.0, "categorias": []
+    }
+    produtos = []
+    movimentacoes = []
+    
+    try:
+        # 1. Busca todos os produtos vinculados ao usuário/empresa
+        res_prod = supabase.table("produtos").select("*").execute()
+        if res_prod.data:
+            produtos = res_prod.data
+            stats["total"] = len(produtos)
+            
+            # Agrupamento por categorias para o gráfico de barras
+            cat_dict = {}
+            
+            for p in produtos:
+                status = p.get("status", "ok")
+                qtd = p.get("quantidade", 0)
+                minimo = p.get("quantidade_minima", 0)
+                custo = p.get("preco_custo", 0.0) or 0.0
+                valor_item = qtd * custo
+                
+                # Incrementa contadores de status
+                if status in stats:
+                    stats[status] += 1
+                else:
+                    stats["ok"] += 1
+                    
+                if qtd < minimo:
+                    stats["abaixo_minimo"] += 1
+                    
+                stats["total_estoque"] += valor_item
+                
+                if status in ("vencido", "critico", "atencao"):
+                    stats["capital_em_risco"] += valor_item
+                
+                # Processa categorias
+                cat_nome = p.get("categoria", "Outros")
+                cat_dict[cat_nome] = cat_dict.get(cat_nome, 0.0) + valor_item
 
-def show_dashboard():
+            # Converte dicionário de categorias para o formato do Plotly
+            stats["categorias"] = [{"categoria": k, "valor": v} for k, v in cat_dict.items()]
+
+        # 2. Busca movimentações dos últimos 30 dias para o gráfico histórico
+        res_mov = supabase.table("movimentacoes").select("created_at, tipo, quantidade").execute()
+        if res_mov.data:
+            df_mov_raw = pd.DataFrame(res_mov.data)
+            if not df_mov_raw.empty:
+                df_mov_raw["created_at"] = pd.to_datetime(df_mov_raw["created_at"])
+                df_mov_raw["dia"] = df_mov_raw["created_at"].dt.strftime("%d/%m")
+                df_grouped = df_mov_raw.groupby(["dia", "tipo"])["quantidade"].sum().reset_index()
+                df_grouped.columns = ["dia", "tipo", "total"]
+                movimentacoes = df_grouped.to_dict(orient="records")
+
+    except Exception as e:
+        st.warning(f"Aviso ao carregar dados do banco: {e}")
+        
+    return stats, produtos, movimentacoes
+
+def show_dashboard(supabase): # Recebe a conexão do app.py
     user_id = st.session_state.get("user_id", 1)
     nome    = st.session_state.get("nome_completo","Usuário").split()[0]
     hoje    = datetime.now(_TZ).strftime("%d/%m/%Y")
@@ -57,8 +117,8 @@ def show_dashboard():
         unsafe_allow_html=True,
     )
 
-    # Busca stats filtradas por user_id
-    s = get_stats(user_id)
+    # Processa os dados diretamente do Supabase
+    s, todos, mov = _buscar_dados_supabase(supabase, user_id)
 
     # ── KPIs Estoque ───────────────────────────────────────────────────────────
     st.markdown("#### 📦 Situação do Estoque")
@@ -108,82 +168,18 @@ def show_dashboard():
         cats = s.get("categorias", [])
         if cats:
             df_cat = pd.DataFrame(cats)
-            if "valor" in df_cat.columns:
+            if "valor" in df_cat.columns and not df_cat.empty:
                 df_cat = df_cat[df_cat["valor"] > 0].sort_values("valor", ascending=True)
-                df_cat["valor_fmt"] = df_cat["valor"].apply(
-                    lambda v: f"R$ {v:,.0f}".replace(",","X").replace(".",",").replace("X",".")
-                )
-                fig2 = px.bar(
-                    df_cat, x="valor", y="categoria", orientation="h",
-                    color="valor",
-                    color_continuous_scale=["#d8f3dc","#52b788","#1b4332"],
-                    text="valor_fmt",
-                    labels={"valor":"R$","categoria":""},
-                )
-                fig2.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
-                fig2.update_layout(showlegend=False, coloraxis_showscale=False,
-                                   margin=dict(t=10,b=10,l=10,r=80), height=255,
-                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                   xaxis=dict(showticklabels=False, showgrid=False))
-                st.plotly_chart(fig2, use_container_width=True)
-            else:
-                st.info("Cadastre preços de custo para ver o valor por categoria.")
-        else:
-            st.info("Sem dados de categoria.")
-
-    # ── Itens críticos ─────────────────────────────────────────────────────────
-    st.markdown("#### 🔔 Itens que precisam de atenção")
-    todos    = listar_produtos(user_id)
-    proximos = sorted(
-        [p for p in todos if p["status"] in ("critico","atencao","vencido")],
-        key=lambda x: x["dias_para_vencer"],
-    )[:10]
-
-    if proximos:
-        cols = st.columns(2)
-        for i, p in enumerate(proximos):
-            if p["status"]=="vencido":
-                cor="#e74c3c"; bg="#fde8e8"; emoji="🔴"; txt="VENCIDO"
-            elif p["status"]=="critico":
-                cor="#e67e22"; bg="#fff3cd"; emoji="🔴"; txt=f"{p['dias_para_vencer']}d"
-            else:
-                cor="#f0a500"; bg="#fffde7"; emoji="🟡"; txt=f"{p['dias_para_vencer']}d"
-            preco_txt = _fmt_brl(p["preco_custo"]) if p.get("preco_custo") else ""
-            loc_txt   = f" · 📍 {p['localizacao']}" if p.get("localizacao") else ""
-            with cols[i%2]:
-                st.markdown(
-                    f"""<div style='display:flex;align-items:center;justify-content:space-between;
-                        padding:10px 14px;background:{bg};border-left:4px solid {cor};
-                        border-radius:0 10px 10px 0;margin-bottom:8px;'>
-                      <div>
-                        <div style='font-weight:600;font-size:0.88rem;'>{emoji} {p['nome']}</div>
-                        <div style='color:#777;font-size:0.76rem;margin-top:2px;'>
-                          {p['categoria']} · {p['quantidade']} {p['unidade']}
-                          {" · "+preco_txt if preco_txt else ""}{loc_txt}
-                        </div>
-                      </div>
-                      <span style='background:{cor};color:white;padding:3px 10px;
-                                   border-radius:20px;font-size:0.76rem;font-weight:700;
-                                   white-space:nowrap;margin-left:10px;'>{txt}</span>
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
-    else:
-        st.success("🎉 Tudo sob controle! Nenhum produto crítico no momento.")
-
-    # ── Movimentações ──────────────────────────────────────────────────────────
-    st.markdown("#### 📈 Movimentações — últimos 30 dias")
-    mov = get_movimentacoes_chart(user_id, 30)
-    if mov:
-        df_mov = pd.DataFrame(mov)
-        fig3 = px.bar(df_mov, x="dia", y="total", color="tipo",
-                      color_discrete_map={"entrada":"#2d6a4f","saida":"#e74c3c"},
-                      barmode="group",
-                      labels={"dia":"Data","total":"Quantidade","tipo":"Tipo"})
-        fig3.update_layout(margin=dict(t=10,b=10,l=0,r=0), height=220,
-                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           legend=dict(orientation="h",y=1.12,x=0))
-        fig3.update_traces(marker_line_width=0)
-        st.plotly_chart(fig3, use_container_width=True)
-    else:
-        st.info("Sem movimentações registradas ainda.")
+                if not df_cat.empty:
+                    df_cat["valor_fmt"] = df_cat["valor"].apply(
+                        lambda v: f"R$ {v:,.0f}".replace(",","X").replace(".",",").replace("X",".")
+                    )
+                    fig2 = px.bar(
+                        df_cat, x="valor", y="categoria", orientation="h",
+                        color="valor",
+                        color_continuous_scale=["#d8f3dc","#52b788","#1b4332"],
+                        text="valor_fmt",
+                        labels={"valor":"R$","categoria":""},
+                    )
+                    fig2.update_traces(marker_line_width=0, textposition="outside", textfont_size=11)
+                    fig2.update_layout(showlegend
