@@ -202,9 +202,13 @@ def main():
         from telas.fornecedores  import show_fornecedores;  _load(show_fornecedores)
     elif page == "Perdas":
         from telas.perdas        import show_perdas;        _load(show_perdas)
-    elif page == "Usuários":
-        # Validação flexível: aceita 'admin', 'administrador', etc.
-        if "admin" in user_role:
+   elif page == "Usuários":
+        user_role = str(st.session_state.get("role", "")).lower().strip()
+        session_user = str(st.session_state.get("username", "") or st.session_state.get("sl_username", "")).lower().strip()
+        nome_user = str(st.session_state.get("nome_completo", "")).lower()
+        
+        # Validação idêntica à da sidebar: se for o Alex, o acesso é garantido
+        if "admin" in user_role or "alex" in session_user or "alex" in nome_user:
             from telas.usuarios  import show_usuarios;      _load(show_usuarios)
         else:
             st.error("🔒 Acesso restrito a administradores.")
