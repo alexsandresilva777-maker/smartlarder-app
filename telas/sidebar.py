@@ -16,11 +16,10 @@ def show_sidebar(limpar_cookie_fn) -> str:
     role_raw = st.session_state.get("role", "domestico")
     role = str(role_raw).lower().strip()
     
-    # Captura variações comuns de onde o username pode estar guardado na sessão
     session_user = str(st.session_state.get("username", "") or st.session_state.get("sl_username", "")).lower().strip()
     nome = st.session_state.get("nome_completo", "Usuário")
     
-    # Se for o Alex, ele é ADMIN independentemente do banco de dados
+    # Validação mestre para o Alex ser Admin global
     is_admin_user = "admin" in role or "alex" in session_user or "alex" in nome.lower()
     
     visual_role = "admin" if is_admin_user else role
