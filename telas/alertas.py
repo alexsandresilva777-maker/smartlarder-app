@@ -1,15 +1,84 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
-from utils.database import listar_produtos, get_config_alertas, salvar_config_alertas
+from datetime import datetime
+import pytz
 from utils.email_alert import enviar_alerta_email
 
-def show_alertas():
+_TZ = pytz.timezone("America/Sao_Paulo")
+
+def _buscar_produtos_alertas_supabase(supabase, user_id):
+    """Busca produtos no Supabase e separa em categorias de vencimento em tempo real"""
+    try:
+        res = supabase.table("produtos").select("*").execute()
+        if not res.data:
+            return [], [], []
+            
+        produtos = res.data
+        vencidos = []
+        criticos = []
+        atencao  = []
+        hoje = datetime.now(_TZ).date()
+        
+        for p in produtos:
+            try:
+                val = datetime.strptime(p["validade"], "%Y-%m-%d").date()
+                dias = (val - hoje).days
+            except Exception:
+                dias = 999
+                
+            p["dias_para_vencer"] = dias
+            status_real = p.get("status", "ok")
+            
+            if dias < 0 or status_real == "vencido":
+                vencidos.append(p)
+            elif dias <= 7 or status_real == "critico":
+                criticos.append(p)
+            elif dias <= 30 or status_real == "atencao":
+                atencao.append(p)
+                
+        return vencidos, criticos, atencao
+    except Exception as e:
+        st.error(f"Erro ao carregar dados de alerta: {e}")
+        return [], [], []
+
+def _get_config_alertas_supabase(supabase, user_id):
+    """Busca as configurações de e-mail salvas no Supabase ou retorna um dicionário padrão"""
+    try:
+        res = supabase.table("configuracoes").select("*").eq("id", 1).execute()
+        if res.data and len(res.data) > 0:
+            return res.data[0]
+    except Exception:
+        pass
+    return {
+        "email_destino": "", "smtp_usuario": "", "dias_aviso": 7,
+        "smtp_senha": "", "smtp_host": "smtp.gmail.com", "smtp_porta": 587,
+        "enviar_email": 0
+    }
+
+def _salvar_config_alertas_supabase(supabase, user_id, dados):
+    """Salva ou atualiza os parâmetros de SMTP na tabela configuracoes do Supabase"""
+    try:
+        # Tenta atualizar o registro com ID fixo 1
+        supabase.table("configuracoes").upsert({
+            "id": 1,
+            "email_destino": dados.get("email_destino"),
+            "smtp_usuario": dados.get("smtp_usuario"),
+            "dias_aviso": dados.get("dias_aviso"),
+            "smtp_senha": dados.get("smtp_senha"),
+            "smtp_host": dados.get("smtp_host"),
+            "smtp_porta": dados.get("smtp_porta"),
+            "enviar_email": dados.get("enviar_email")
+        }).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar configurações no banco: {e}")
+        return False
+
+def show_alertas(supabase): # Recebe a conexão do app.py
     user_id = st.session_state.get("user_id", 1)
     st.markdown("## 🔔 Central de Alertas")
 
-    produtos = listar_produtos(user_id, )
-    vencidos = [p for p in produtos if p["status"]=="vencido"]
-    criticos = [p for p in produtos if p["status"]=="critico"]
-    atencao  = [p for p in produtos if p["status"]=="atencao"]
+    vencidos, criticos, atencao = _buscar_produtos_alertas_supabase(supabase, user_id)
 
     # ── KPI cards ──────────────────────────────────────────
     c1, c2, c3 = st.columns(3)
@@ -36,7 +105,8 @@ def show_alertas():
     def _render_lista(titulo, cor, bg, items):
         if not items:
             return
-        st.markdown(f"### {titulo}")
+        if titulo:
+            st.markdown(f"### {titulo}")
         for p in items:
             dias_txt  = "VENCIDO" if p["dias_para_vencer"] < 0 else f"{p['dias_para_vencer']}d"
             preco_txt = (f" · R$ {p['preco_custo']:.2f}".replace(".",",")
@@ -48,9 +118,9 @@ def show_alertas():
                     background:{bg};border-left:4px solid {cor};
                     border-radius:0 10px 10px 0;margin-bottom:6px;'>
                   <div>
-                    <span style='font-weight:600;font-size:0.9rem;'>{p['nome']}</span>
+                    <span style='font-weight:600;font-size:0.9rem;'>{p.get('nome', 'Sem nome')}</span>
                     <span style='color:#888;font-size:0.79rem;margin-left:8px;'>
-                      {p['categoria']} · {p['quantidade']} {p['unidade']}{preco_txt}{loc_txt}
+                      {p.get('categoria', 'Geral')} · {p.get('quantidade', 0)} {p.get('unidade', 'un')}{preco_txt}{loc_txt}
                     </span>
                   </div>
                   <span style='background:{cor};color:white;padding:3px 10px;
@@ -75,7 +145,7 @@ def show_alertas():
 
     # ── Config e-mail ───────────────────────────────────────
     st.markdown("### 📧 Configuração de Alertas por E-mail")
-    config = get_config_alertas(user_id)
+    config = _get_config_alertas_supabase(supabase, user_id)
 
     with st.expander("⚙️ Configurar SMTP / Gmail", expanded=False):
         st.info(
@@ -108,13 +178,14 @@ def show_alertas():
                 value=bool(config.get("enviar_email")),
             )
             if st.form_submit_button("💾 Salvar Configurações", type="primary"):
-                salvar_config_alertas(user_id, dict(
+                sucesso = _salvar_config_alertas_supabase(supabase, user_id, dict(
                     email_destino=email_dest, dias_aviso=dias_aviso,
                     enviar_email=1 if enviar_auto else 0,
                     smtp_host=smtp_host, smtp_porta=smtp_porta,
                     smtp_usuario=smtp_usuario, smtp_senha=smtp_senha,
                 ))
-                st.success("✅ Configurações salvas!")
+                if sucesso:
+                    st.success("✅ Configurações salvas!")
 
     # ── Envio manual ────────────────────────────────────────
     st.markdown("### 📤 Enviar Alerta Agora")
