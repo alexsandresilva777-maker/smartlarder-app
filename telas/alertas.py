@@ -6,9 +6,10 @@ from utils.email_alert import enviar_alerta_email
 
 _TZ = pytz.timezone("America/Sao_Paulo")
 
-def _buscar_produtos_alertas_supabase(supabase, user_id):
+def _buscar_produtos_alertas_supabase(user_id):
     """Busca produtos no Supabase e separa em categorias de vencimento em tempo real"""
     try:
+        supabase = st.session_state["db"]
         res = supabase.table("produtos").select("*").execute()
         if not res.data:
             return [], [], []
@@ -41,9 +42,10 @@ def _buscar_produtos_alertas_supabase(supabase, user_id):
         st.error(f"Erro ao carregar dados de alerta: {e}")
         return [], [], []
 
-def _get_config_alertas_supabase(supabase, user_id):
+def _get_config_alertas_supabase(user_id):
     """Busca as configurações de e-mail salvas no Supabase ou retorna um dicionário padrão"""
     try:
+        supabase = st.session_state["db"]
         res = supabase.table("configuracoes").select("*").eq("id", 1).execute()
         if res.data and len(res.data) > 0:
             return res.data[0]
@@ -55,9 +57,10 @@ def _get_config_alertas_supabase(supabase, user_id):
         "enviar_email": 0
     }
 
-def _salvar_config_alertas_supabase(supabase, user_id, dados):
+def _salvar_config_alertas_supabase(user_id, dados):
     """Salva ou atualiza os parâmetros de SMTP na tabela configuracoes do Supabase"""
     try:
+        supabase = st.session_state["db"]
         # Tenta atualizar o registro com ID fixo 1
         supabase.table("configuracoes").upsert({
             "id": 1,
@@ -74,11 +77,12 @@ def _salvar_config_alertas_supabase(supabase, user_id, dados):
         st.error(f"Erro ao salvar configurações no banco: {e}")
         return False
 
-def show_alertas(supabase): # Recebe a conexão do app.py
+def show_alertas(): # Alterado: sem o parâmetro supabase na assinatura
+    supabase = st.session_state["db"] # Resgata a conexão da gaveta global
     user_id = st.session_state.get("user_id", 1)
     st.markdown("## 🔔 Central de Alertas")
 
-    vencidos, criticos, atencao = _buscar_produtos_alertas_supabase(supabase, user_id)
+    vencidos, criticos, atencao = _buscar_produtos_alertas_supabase(user_id)
 
     # ── KPI cards ──────────────────────────────────────────
     c1, c2, c3 = st.columns(3)
@@ -145,7 +149,7 @@ def show_alertas(supabase): # Recebe a conexão do app.py
 
     # ── Config e-mail ───────────────────────────────────────
     st.markdown("### 📧 Configuração de Alertas por E-mail")
-    config = _get_config_alertas_supabase(supabase, user_id)
+    config = _get_config_alertas_supabase(user_id)
 
     with st.expander("⚙️ Configurar SMTP / Gmail", expanded=False):
         st.info(
@@ -178,7 +182,7 @@ def show_alertas(supabase): # Recebe a conexão do app.py
                 value=bool(config.get("enviar_email")),
             )
             if st.form_submit_button("💾 Salvar Configurações", type="primary"):
-                sucesso = _salvar_config_alertas_supabase(supabase, user_id, dict(
+                sucesso = _salvar_config_alertas_supabase(user_id, dict(
                     email_destino=email_dest, dias_aviso=dias_aviso,
                     enviar_email=1 if enviar_auto else 0,
                     smtp_host=smtp_host, smtp_porta=smtp_porta,
