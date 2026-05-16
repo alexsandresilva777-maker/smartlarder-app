@@ -15,14 +15,14 @@ _PAGES_BASE = [
 def show_sidebar(limpar_cookie_fn) -> str:
     role_raw = st.session_state.get("role", "domestico")
     role = str(role_raw).lower().strip()
-    username = str(st.session_state.get("username", "")).lower().strip()
+    
+    # Captura variações comuns de onde o username pode estar guardado na sessão
+    session_user = str(st.session_state.get("username", "") or st.session_state.get("sl_username", "")).lower().strip()
     nome = st.session_state.get("nome_completo", "Usuário")
     
-    # Define se o utilizador atual atua como Administrador do sistema
-    # CORREÇÃO: Garante acesso de admin se o cargo contiver "admin" OU se for o utilizador principal 'alex'
-    is_admin_user = "admin" in role or username == "alex"
+    # Se for o Alex, ele é ADMIN independentemente do banco de dados
+    is_admin_user = "admin" in role or "alex" in session_user or "alex" in nome.lower()
     
-    # Ajusta as cores visuais com base no estatuto real de administrador
     visual_role = "admin" if is_admin_user else role
     rc = {"admin": "#e74c3c", "comercial": "#e67e22", "domestico": "#2d6a4f"}.get(visual_role, "#2d6a4f")
     rb = {"admin": "#fde8e8", "comercial": "#fff3cd", "domestico": "#e8f5e9"}.get(visual_role, "#e8f5e9")
