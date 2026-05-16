@@ -14,7 +14,7 @@ def show_relatorios():
         return
 
     try:
-        # CORREÇÃO: Utilizando 'desc=True' em vez de 'descending=True' para a nova API do Supabase
+        # CORREÇÃO: Usando 'desc=False' para a nova versão da API do Supabase
         res = db.table("produtos").select("*").eq("empresa_id", empresa_id).order("nome", desc=False).execute()
         
         if not res.data:
@@ -23,13 +23,12 @@ def show_relatorios():
             
         df = pd.DataFrame(res.data)
         
-        # Exibição básica de métricas de exemplo
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         c1.metric("Total de Itens Cadastrados", len(df))
         if "quantidade" in df.columns:
-            c2.metric("Volume Total em Estoque", int(df["quantidade"].sum()))
+            c2.metric("Volume em Estoque", int(df["quantidade"].sum()))
         
-        st.markdown("### 📋 Visão Geral dos Dados")
+        st.markdown("### 📋 Visão Geral")
         st.dataframe(df, use_container_width=True)
         
     except Exception as e:
