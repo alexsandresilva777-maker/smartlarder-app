@@ -1,84 +1,207 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
-from supabase import create_client
-from telas.login import show_login
+import os
+import hashlib
+from utils.auth import tem_permissao
+from streamlit_cookies_manager import EncryptedCookieManager
 
-# 1. Configuração da página (DEVE ser o primeiro comando do Streamlit no script)
-st.set_page_config(page_title="SmartLarder Pro", page_icon="🍞", layout="wide")
+st.set_page_config(
+    page_title="SmartLarder Pro",
+    page_icon="📦",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Inicializa o estado de login
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+# CSS — usa aspas simples dentro do HTML para evitar conflito
+_CSS = (
+    "<style>"
+    "[data-testid='stSidebarNav'] {display: none !important;}"
+    "button[data-testid='stSidebarCollapseButton'] {"
+    "    visibility: visible !important;"
+    "    display: flex !important;"
+    "    background-color: #2d6a4f !important;"
+    "    color: white !important;"
+    "    z-index: 999999 !important;"
+    "}"
+    ".block-container {padding-top: 1rem !important;}"
+    "</style>"
+)
+st.markdown(_CSS, unsafe_allow_html=True)
 
-def init_connection():
-    """Inicializa o cliente do Supabase usando os Secrets do Streamlit"""
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+# PWA — sem triple-quotes, sem aspas duplas no HTML
+_PWA = (
+    "<meta name='viewport' content='width=device-width, initial-scale=1,"
+    " maximum-scale=1, user-scalable=no, viewport-fit=cover'>"
+    "<meta name='apple-mobile-web-app-capable' content='yes'>"
+    "<meta name='apple-mobile-web-app-status-bar-style'"
+    " content='black-translucent'>"
+    "<meta name='mobile-web-app-capable' content='yes'>"
+    "<style>"
+    "html { overflow: hidden; height: 100%; }"
+    "body { height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; }"
+    "</style>"
+)
+st.markdown(_PWA, unsafe_allow_html=True)
+
+# Cookie manager
+_COOKIE_PASSWORD = st.secrets.get(
+    "COOKIES_PASSWORD", "smartlarder-secret-key-32chars!!"
+)
+cookies = EncryptedCookieManager(
+    prefix="smartlarder/",
+    password=_COOKIE_PASSWORD,
+)
+if not cookies.ready():
+    st.stop()
+
+
+# ── Funções de cookie ─────────────────────────────────────────────────────────
+
+def _salvar_sessao_no_cookie(user: dict):
+    try:
+        cookies["sl_user_id"]    = str(user.get("id", ""))
+        cookies["sl_username"]   = str(user.get("username", ""))
+        cookies["sl_nome"]       = str(user.get("nome", ""))
+        cookies["sl_role"]       = str(user.get("role", "domestico"))
+        cookies["sl_empresa_id"] = str(user.get("empresa_id", "1"))
+        cookies["sl_token"]      = hashlib.sha256(
+            user.get("senha_hash", "").encode()
+        ).hexdigest()[:16]
+        cookies.save()
+    except Exception:
+        pass
+
+
+def _restaurar_sessao_do_cookie():
+    try:
+        user_id    = cookies.get("sl_user_id", "")
+        username   = cookies.get("sl_username", "")
+        token      = cookies.get("sl_token", "")
+        empresa_id = cookies.get("sl_empresa_id", "1")
+        role       = cookies.get("sl_role", "domestico")
+        nome       = cookies.get("sl_nome", "")
+
+        if not user_id or not username or not token:
+            return
+
+        from utils.database import get_conn
+        supabase = get_conn()
+        res = (
+            supabase.table("usuarios")
+            .select("*")
+            .eq("id", int(user_id))
+            .eq("username", username)
+            .eq("ativo", 1)
+            .execute()
+        )
+        row = res.data[0] if res.data else None
+
+        if not row:
+            _limpar_cookie()
+            return
+
+        token_esperado = hashlib.sha256(
+            row["senha_hash"].encode()
+        ).hexdigest()[:16]
+
+        if token != token_esperado:
+            _limpar_cookie()
+            return
+
+        st.session_state.logged_in     = True
+        st.session_state.user_id       = int(user_id)
+        st.session_state.username      = username
+        st.session_state.nome_completo = nome
+        st.session_state.role          = role
+        st.session_state.empresa_id    = int(empresa_id)
+        st.session_state.alerts        = {}
+        st.session_state.batch_list    = []
+
+    except Exception:
+        _limpar_cookie()
+
+
+def _limpar_cookie():
+    try:
+        for key in ["sl_user_id", "sl_username", "sl_nome",
+                    "sl_role", "sl_empresa_id", "sl_token"]:
+            if key in cookies:
+                cookies[key] = ""
+        cookies.save()
+    except Exception:
+        pass
+
+
+# ── App principal ─────────────────────────────────────────────────────────────
 
 def main():
-    # Se o usuário não estiver logado, renderiza apenas a tela de login
-    if not st.session_state.logged_in:
-        show_login()
-        return
+    from utils.database import init_db
 
-    # Se chegou aqui, o usuário está logado com sucesso!
-    supabase = init_connection()
-
-    # ── BARRA LATERAL (SIDEBAR) ORIGINAL ──
-    with st.sidebar:
-        st.title("🍞 SmartLarder Pro")
-        st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Alex')}")
-        st.write(f"🏢 **Empresa ID:** {st.session_state.get('empresa_id', 1)}")
-        st.markdown("---")
-        
-        if st.button("Sair / Logout", width="stretch"):
-            st.session_state.logged_in = False
-            st.rerun()
-
-    # ── PAINEL PRINCIPAL EM ABAS RECONECTADO ──
     try:
-        # Cria as abas principais com base nos seus arquivos reais
-        aba_dash, aba_estq, aba_relat, aba_comp = st.tabs([
-            "📊 Dashboard", 
-            "📦 Gerenciar Estoque", 
-            "📋 Relatórios", 
-            "🛒 Lista de Compras"
-        ])
-        
-        # Conecta a aba 1 com o seu arquivo telas/dashboard.py
-        with aba_dash:
-            try:
-                from telas.dashboard import mostrar_dashboard
-                mostrar_dashboard(supabase)
-            except AttributeError:
-                st.info("Painel de indicadores ativo.")
-
-        # Conecta a aba 2 com o seu arquivo telas/produtos.py
-        with aba_estq:
-            try:
-                from telas.produtos import mostrar_painel_produtos
-                mostrar_painel_produtos(supabase)
-            except ImportError:
-                st.error("Erro ao importar a tela de produtos. Verifique as funções internas.")
-
-        # Conecta a aba 3 com o seu arquivo telas/relatorios.py
-        with aba_relat:
-            try:
-                from telas.relatorios import mostrar_relatorios
-                mostrar_relatorios(supabase)
-            except AttributeError:
-                st.info("Histórico e relatórios de movimentações.")
-
-        # Conecta a aba 4 com o seu arquivo telas/lista_compras.py
-        with aba_comp:
-            try:
-                from telas.lista_compras import mostrar_lista_compras
-                mostrar_lista_compras(supabase)
-            except AttributeError:
-                st.info("Gerenciamento de lista de compras.")
-
+        init_db()
     except Exception as e:
-        st.error(f"Erro ao desenhar a interface principal: {e}")
+        st.error(f"Erro no banco: {e}")
+        st.stop()
+
+    defaults = {
+        "logged_in":    False,
+        "user_id":      None,
+        "empresa_id":   None,
+        "role":         "",
+        "current_page": "Dashboard",
+        "alerts":       {},
+        "batch_list":   [],
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    if not st.session_state.get("logged_in"):
+        _restaurar_sessao_do_cookie()
+
+    if (not st.session_state.get("logged_in")
+            or st.session_state.get("user_id") is None
+            or st.session_state.get("empresa_id") is None):
+        from telas.login import show_login
+        show_login()
+        st.stop()
+
+    from telas.sidebar import show_sidebar
+    page = show_sidebar()
+
+    def _load(fn):
+        try:
+            fn()
+        except Exception as e:
+            import traceback
+            st.error(f"Erro na página {page}: {e}")
+            st.code(traceback.format_exc())
+
+    if   page == "Dashboard":
+        from telas.dashboard     import show_dashboard;     _load(show_dashboard)
+    elif page == "Produtos":
+        from telas.produtos      import show_produtos;      _load(show_produtos)
+    elif page == "Cadastrar":
+        from telas.cadastro      import show_cadastro;      _load(show_cadastro)
+    elif page == "Recepção de Carga":
+        from telas.recepcao      import show_recepcao;      _load(show_recepcao)
+    elif page == "Lista de Compras":
+        from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
+    elif page == "Alertas":
+        from telas.alertas       import show_alertas;       _load(show_alertas)
+    elif page == "Relatórios":
+        from telas.relatorios    import show_relatorios;    _load(show_relatorios)
+    elif page == "Fornecedores":
+        if tem_permissao("ver_fornecedores"):
+            from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
+        else:
+            st.error("Acesso restrito.")
+    elif page == "Usuários":
+        if st.session_state.role == "admin":
+            from telas.usuarios import show_usuarios; _load(show_usuarios)
+        else:
+            st.error("Acesso restrito.")
+
 
 if __name__ == "__main__":
     main()
