@@ -2,7 +2,7 @@
 import streamlit as st
 
 def DB_buscar_produto_por_codigo(codigo):
-    """Busca um produto direto no Supabase pelo código de barras de forma segura"""
+    """Busca um produto direto no Supabase pelo código de barras"""
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     if not db or not codigo:
@@ -14,19 +14,7 @@ def DB_buscar_produto_por_codigo(codigo):
         st.warning(f"Aviso na busca por código: {e}")
         return None
 
-def DB_salvar_produto(data):
-    """Insere ou atualiza um produto no banco de dados"""
-    db = st.session_state.get("db")
-    if not db:
-        return False
-    try:
-        db.table("produtos").insert(data).execute()
-        return True
-    except Exception as e:
-        st.error(f"Erro ao salvar produto: {e}")
-        return False
-
-def show_cadastrar():
+def show_cadastro():
     st.markdown("## ➕ Cadastrar Produto")
     st.checkbox("📸 Acionar Scanner (Câmera)", key="scanner_camera")
     st.markdown("---")
