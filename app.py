@@ -132,7 +132,6 @@ def main():
     # 1. Inicializa o cliente Supabase diretamente e guarda no session_state
     if "db" not in st.session_state:
         try:
-            # Resgata as chaves diretamente do segredo do Streamlit Cloud
             url: str = st.secrets["SUPABASE_URL"]
             key: str = st.secrets["SUPABASE_KEY"]
             st.session_state["db"] = create_client(url, key)
@@ -168,7 +167,7 @@ def main():
         show_login(cookies, _salvar_cookie)
         st.stop()
 
-   # 5. Sidebar e roteamento
+    # 5. Sidebar e roteamento
     from telas.sidebar import show_sidebar
     page = show_sidebar(_limpar_cookie)
 
@@ -180,40 +179,37 @@ def main():
             st.error(f"Erro na página {page}: {e}")
             st.code(traceback.format_exc())
 
-    # Padroniza a string de role para evitar problemas com maiúsculas/espaços
+    # Padroniza as variáveis de texto para evitar problemas de capitulação
     user_role = str(st.session_state.get("role", "")).lower().strip()
+    session_user = str(st.session_state.get("username", "") or st.session_state.get("sl_username", "")).lower().strip()
+    nome_user = str(st.session_state.get("nome_completo", "")).lower()
 
-    # 6. Roteamento — as funções agora buscam a conexão na gaveta global
-    if   page == "Dashboard":
-        from telas.dashboard   import show_dashboard;    _load(show_dashboard)
+    # 6. Roteamento Inteligente
+    if page == "Dashboard":
+        from telas.dashboard import show_dashboard; _load(show_dashboard)
     elif page == "Produtos":
-        from telas.produtos    import show_produtos;     _load(show_produtos)
+        from telas.produtos import show_produtos; _load(show_produtos)
     elif page == "Cadastrar":
-        from telas.cadastro    import show_cadastro;     _load(show_cadastro)
+        from telas.cadastro import show_cadastro; _load(show_cadastro)
     elif page == "Recepção de Carga":
-        from telas.recepcao    import show_recepcao;     _load(show_recepcao)
+        from telas.recepcao import show_recepcao; _load(show_recepcao)
     elif page == "Lista de Compras":
         from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
     elif page == "Alertas":
-        from telas.alertas       import show_alertas;       _load(show_alertas)
+        from telas.alertas import show_alertas; _load(show_alertas)
     elif page == "Relatórios":
-        from telas.relatorios    import show_relatorios;    _load(show_relatorios)
+        from telas.relatorios import show_relatorios; _load(show_relatorios)
     elif page == "Fornecedores":
-        from telas.fornecedores  import show_fornecedores;  _load(show_fornecedores)
+        from telas.fornecedores import show_fornecedores; _load(show_fornecedores)
     elif page == "Perdas":
-        from telas.perdas        import show_perdas;        _load(show_perdas)
-   elif page == "Usuários":
-        user_role = str(st.session_state.get("role", "")).lower().strip()
-        session_user = str(st.session_state.get("username", "") or st.session_state.get("sl_username", "")).lower().strip()
-        nome_user = str(st.session_state.get("nome_completo", "")).lower()
-        
-        # Validação idêntica à da sidebar: se for o Alex, o acesso é garantido
+        from telas.perdas import show_perdas; _load(show_perdas)
+    elif page == "Usuários":
         if "admin" in user_role or "alex" in session_user or "alex" in nome_user:
-            from telas.usuarios  import show_usuarios;      _load(show_usuarios)
+            from telas.usuarios import show_usuarios; _load(show_usuarios)
         else:
             st.error("🔒 Acesso restrito a administradores.")
     elif page == "Ajuda":
-        from telas.ajuda         import show_ajuda;         _load(show_ajuda)
+        from telas.ajuda import show_ajuda; _load(show_ajuda)
 
 
 if __name__ == "__main__":
