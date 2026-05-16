@@ -26,11 +26,11 @@ def show_relatorios():
             res_prod = supabase.table("produtos").select("*").eq("empresa_id", empresa_id).execute()
             df_produtos = pd.DataFrame(res_prod.data or [])
             
-            # CORRIGIDO: Removido 'descending' e adicionado 'descend=True' conforme a API do Supabase exige
+            # CORREÇÃO DEFINITIVA: O parâmetro correto na biblioteca Supabase-py é 'desc=True'
             res_mov = supabase.table("movimentacoes")\
                 .select("id, tipo, quantidade, motivo, created_at, produto_id")\
                 .eq("empresa_id", empresa_id)\
-                .order("created_at", descend=True)\
+                .order("created_at", desc=True)\
                 .limit(200)\
                 .execute()
             df_movimentos = pd.DataFrame(res_mov.data or [])
