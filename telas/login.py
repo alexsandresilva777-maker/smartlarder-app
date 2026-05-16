@@ -30,14 +30,14 @@ def show_login():
                 supabase = _get_supabase_client()
                 login_busca = usuario_digitado.lower()
                 
-                # Busca direta buscando o username digitado
+                # Busca direta na tabela usuarios buscando pelo username
                 resposta = supabase.table("usuarios").select("*").eq("username", login_busca).execute()
                 
                 if resposta.data and len(resposta.data) > 0:
                     user = resposta.data[0]
                     senha_hash_digitada = _converter_para_sha256(senha_digitada)
                     
-                    # Compara o hash gerado com o que está gravado no Supabase
+                    # Compara o hash da senha digitada com o do banco
                     if user.get("senha_hash") == senha_hash_digitada:
                         st.session_state.logged_in = True
                         st.session_state.user_id = user["id"]
