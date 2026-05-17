@@ -24,7 +24,7 @@ def init_state():
         "ultimo_codigo_buscado": "",
         "produto_id": None,
         "produto_existente": False,
-        "form_id_cadastro": 0,  # Controla o reset completo dos campos amarrados a chaves
+        "form_id_cadastro": 0, 
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -127,6 +127,7 @@ def processar_busca(db, empresa_id, codigo):
 
             local, forn, lote, obs = parse_localizacao(produto.get("localizacao", ""))
 
+            # Alimenta o State com o que veio do banco de dados
             st.session_state.cad_nome = str(produto.get("nome", "")).upper()
             st.session_state.cad_categoria = produto.get("categoria", "Outros")
             st.session_state.cad_quantidade = int(produto.get("quantidade", 0))
@@ -147,6 +148,7 @@ def processar_busca(db, empresa_id, codigo):
             st.success("✅ Produto localizado no banco de dados!")
             return
 
+        # Se não achou no banco, tenta a API pública
         api = buscar_openfoodfacts(codigo)
         if api:
             if api.get("nome"):
@@ -156,6 +158,7 @@ def processar_busca(db, empresa_id, codigo):
         else:
             st.warning("⚠️ Produto não cadastrado. Continue manualmente.")
 
+        # Reseta os controles de ID se for um produto inteiramente novo
         st.session_state.produto_existente = False
         st.session_state.produto_id = None
 
@@ -198,7 +201,6 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    # Modificamos a chave dinamicamente para forçar a limpeza completa do input ao salvar
     key_barcode = f"cad_barcode_{st.session_state.form_id_cadastro}"
 
     col1, col2 = st.columns([4, 1])
@@ -212,7 +214,7 @@ def show_cadastro():
         processar_busca(db, empresa_id, codigo)
         st.rerun()
 
-    # O form_id muda ao salvar com sucesso, forçando o Streamlit a zerar todos os elementos internos
+    # O segredo do retorno está aqui: chaves amarradas dinamicamente ao ID do form garantem o redesenho dos dados
     with st.form(key=f"form_cadastro_final_{st.session_state.form_id_cadastro}", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
@@ -271,7 +273,7 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Reset seguro das variáveis internas de controle
+                    # Reseta as variáveis internas para a próxima digitação
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
                     st.session_state.cad_unidade = "un"
@@ -287,7 +289,7 @@ def show_cadastro():
                     st.session_state.produto_id = None
                     st.session_state.produto_existente = False
                     
-                    # Incrementa o form_id. Isso limpa magicamente todos os inputs na tela
+                    # Muda o ID do form, limpando a tela visualmente para a próxima entrada
                     st.session_state.form_id_cadastro += 1
 
                     st.rerun()
