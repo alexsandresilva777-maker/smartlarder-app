@@ -14,8 +14,8 @@ def init_state():
         "cad_nome": "",
         "cad_categoria": "Outros",
         "cad_unidade": "un",
-        "cad_quantidade": 0.0,
-        "cad_qtd_min": 0.0,
+        "cad_quantidade": 0,
+        "cad_qtd_min": 0,
         "cad_preco": 0.0,
         "cad_validade": date.today(),
         "cad_localizacao": "",
@@ -47,7 +47,6 @@ def buscar_openfoodfacts(codigo):
         nome_base = p.get("product_name", "").strip()
         marca = p.get("brands", "").strip()
         
-        # Junta Marca + Nome para respeitar a estrutura de colunas do banco
         if marca and nome_base:
             if nome_base.lower().startswith(marca.lower()):
                 nome_completo = nome_base
@@ -130,9 +129,9 @@ def processar_busca(db, empresa_id, codigo):
 
             st.session_state.cad_nome = str(produto.get("nome", "")).upper()
             st.session_state.cad_categoria = produto.get("categoria", "Outros")
-            st.session_state.cad_quantidade = float(produto.get("quantidade", 0))
+            st.session_state.cad_quantidade = int(produto.get("quantidade", 0))
             st.session_state.cad_unidade = produto.get("unidade", "un")
-            st.session_state.cad_qtd_min = float(produto.get("quantidade_minima", 0))
+            st.session_state.cad_qtd_min = int(produto.get("quantidade_minima", 0))
             st.session_state.cad_preco = float(produto.get("preco_custo", 0))
             st.session_state.cad_localizacao = local
             st.session_state.cad_fornecedor = forn
@@ -224,8 +223,9 @@ def show_cadastro():
             idx_uni = lista_unidades.index(st.session_state.cad_unidade) if st.session_state.cad_unidade in lista_unidades else 0
             unidade = st.selectbox("Unidade de Medida *", lista_unidades, index=idx_uni)
             
-            qtd = st.number_input("Quantidade Inicial *", min_value=0.0, step=1.0, value=st.session_state.cad_quantidade)
-            qtd_min = st.number_input("Estoque Mínimo Desejado", min_value=0.0, step=1.0, value=st.session_state.cad_qtd_min)
+            # Mudança crucial: min_value=0 força o número a ser tratado como INTEGER puro pelo python/streamlit
+            qtd = st.number_input("Quantidade Inicial *", min_value=0, step=1, value=int(st.session_state.cad_quantidade))
+            qtd_min = st.number_input("Estoque Mínimo Desejado", min_value=0, step=1, value=int(st.session_state.cad_qtd_min))
 
         with c2:
             preco = st.number_input("Preço de Custo por Unidade (R$)", min_value=0.0, step=0.01, format="%.2f", value=st.session_state.cad_preco)
@@ -250,9 +250,9 @@ def show_cadastro():
                     "barcode": codigo.strip() if codigo.strip() else None,
                     "nome": nome_final,
                     "categoria": categoria,
-                    "quantidade": float(qtd),
+                    "quantidade": int(qtd),
                     "unidade": unidade,
-                    "quantidade_minima": float(qtd_min),
+                    "quantidade_minima": int(qtd_min),
                     "preco_custo": float(preco),
                     "data_validade": validade.strftime("%Y-%m-%d"),
                     "localizacao": local_final
@@ -268,13 +268,13 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Reset Completo do State
+                    # Reset Completo do State voltando para inteiros nativos
                     st.session_state.cad_barcode = ""
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
                     st.session_state.cad_unidade = "un"
-                    st.session_state.cad_quantidade = 0.0
-                    st.session_state.cad_qtd_min = 0.0
+                    st.session_state.cad_quantidade = 0
+                    st.session_state.cad_qtd_min = 0
                     st.session_state.cad_preco = 0.0
                     st.session_state.cad_validade = date.today()
                     st.session_state.cad_localizacao = ""
