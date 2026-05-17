@@ -10,14 +10,9 @@ CATEGORIAS = ["Alimentos", "Bebidas", "Limpeza", "Higiene", "Medicamentos", "Out
 UNIDADES = ["un", "kg", "g", "L", "ml", "cx", "fardo", "pct", "dz"]
 
 def _buscar_produto_apis(barcode: str) -> dict:
-    """
-    Busca inteligente em tempo real usando APIs públicas.
-    Zero dados fixos no código.
-    """
+    """Busca inteligente em tempo real usando APIs públicas."""
     if not barcode or len(barcode) < 8:
         return {}
-
-    # 1ª Tentativa: Open Food Facts
     try:
         url_off = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json"
         res = requests.get(url_off, timeout=4)
@@ -32,23 +27,6 @@ def _buscar_produto_apis(barcode: str) -> dict:
                 }
     except Exception:
         pass
-
-    # 2ª Tentativa: Fallback de API Pública
-    try:
-        url_br = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json"
-        res = requests.get(url_br, timeout=4)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("status") == 1:
-                p = data.get("product", {})
-                return {
-                    "nome": p.get("product_name", ""),
-                    "categoria": "Alimentos",
-                    "unidade": "un"
-                }
-    except Exception:
-        pass
-
     return {}
 
 def show_cadastro():
@@ -75,14 +53,14 @@ def show_cadastro():
             st.markdown("<div style='padding-top:24px;'></div>", unsafe_allow_html=True)
             if st.button("🔍 Buscar Produto", use_container_width=True):
                 if barcode_input.strip():
-                    with st.spinner("Consultando bases de dados inteligentes..."):
+                    with st.spinner("Consultando bases..."):
                         info = _buscar_produto_apis(barcode_input.strip())
                         if info:
                             st.session_state["cadastro_nome"] = info.get("nome", "")
                             st.session_state["cadastro_cat"] = info.get("categoria", "Alimentos")
-                            st.success("✅ Dados localizados com sucesso!")
+                            st.success("✅ Dados localizados!")
                         else:
-                            st.warning("⚠️ Produto não encontrado. Digite os dados manualmente abaixo.")
+                            st.warning("⚠️ Produto não encontrado. Digite manualmente abaixo.")
                 else:
                     st.error("Informe um código de barras válido.")
 
@@ -102,11 +80,13 @@ def show_cadastro():
             categoria = st.selectbox("Categoria *", CATEGORIAS, index=idx_cat)
             
             localizacao = st.text_input("Localização / Armário", placeholder="Ex: Despensa A, Prateleira 2")
+            lote = st.text_input("Número do Lote", placeholder="Ex: L1024")
 
         with col2:
             quantidade = st.number_input("Quantidade Inicial *", min_value=0.0, step=1.0, value=0.0)
             unidade = st.selectbox("Unidade de Medida *", UNIDADES, index=0)
             quantidade_minima = st.number_input("Estoque Mínimo Desejado", min_value=0.0, step=1.0, value=0.0)
+            onde_comprou = st.text_input("Onde foi comprado (Fornecedor/Loja)", placeholder="Ex: Supermercado BH, Distribuidora X")
 
         st.markdown("### Informações de Custo e Validade")
         col3, col4 = st.columns(2)
@@ -123,17 +103,22 @@ def show_cadastro():
             st.error("❌ O campo 'Nome do Produto' é obrigatório.")
             return
 
+        # Montagem do payload contendo os novos campos solicitados
         payload = {
             "empresa_id": int(empresa_id),
             "barcode": barcode_input.strip() if barcode_input.strip() else None,
             "nome": nome.strip(),
             "categoria": categoria,
             "quantidade": float(quantidade),
-            "unidade": unidade,
+            "unidade": unit,
             "quantidade_minima": float(quantidade_minima),
             "preco_custo": float(preco_custo) if preco_custo > 0 else 0.0,
             "data_validade": str(data_validade),
-            "localizacao": localizacao.strip() if localizacao.strip() else None
+            "localizacao": localizacao.strip() if localizacao.strip() else None,
+            
+            # ATENÇÃO: Verifique se estes são os nomes exatos das colunas na tabela do Supabase
+            "lote": lote.strip() if lote.strip() else None,
+            "fornecedor": onde_comprou.strip() if onde_comprou.strip() else None
         }
 
         try:
