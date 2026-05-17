@@ -275,4 +275,22 @@ def show_cadastro():
                     st.session_state.cad_barcode = ""
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
-                    st.session_state.cad_unidade = "un
+                    st.session_state.cad_unidade = "un"
+                    st.session_state.cad_quantidade = 0.0
+                    st.session_state.cad_qtd_min = 0.0
+                    st.session_state.cad_preco = 0.0
+                    st.session_state.cad_validade = date.today()
+                    st.session_state.cad_localizacao = ""
+                    st.session_state.cad_fornecedor = ""
+                    st.session_state.cad_lote = ""
+                    st.session_state.cad_obs = ""
+                    st.session_state.ultimo_codigo_buscado = ""
+                    st.session_state.produto_id = None
+                    st.session_state.produto_existente = False
+
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Erro ao persistir dados no Supabase: {e}")
+            else:
+                st.error("❌ O nome do produto é obrigatório.")
