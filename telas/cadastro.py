@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 telas/cadastro.py — SmartLarder Pro
-Busca comercial externa (EAN) com autopreenchimento automático.
+Busca comercial externa (EAN) com autopreenchimento automático e tratamento numérico rígido.
 """
 import streamlit as st
 import requests
@@ -30,44 +30,36 @@ def _consultar_banco_mundial_ean(codigo: str) -> dict:
     if not codigo:
         return {}
 
-    # --- TENTATIVA 1: BrasilAPI (Consulta o cadastro nacional de produtos GS1 Brasil) ---
     try:
-        url_brasil_api = f"https://brasilapi.com.br/api/isbn/v1/{codigo}" # Nota: Adaptado para endpoint EAN/Produtos se disponível, ou fallback público
-        # Fallback para API pública de produtos ampla (Open Food Facts + interceptor de categorias)
         url_off = f"https://world.openfoodfacts.org/api/v0/product/{codigo}.json"
-        
         r = requests.get(url_off, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if data.get("status") == 1:
                 p = data.get("product", {})
-                nome = p.get("product_name_pt") or p.get("product_name") or p.get("product_name_en") or ""
+                nome = p.get("product_name_pt") or p.get("product_name") or p.get("generic_name_pt") or ""
                 marca = p.get("brands") or p.get("manufacturers") or ""
                 
                 # Inteligência de Categoria Computada
                 cats = str(p.get("categories", "")).lower()
                 categoria_detectada = "Alimentos"
-                if "limpeza" in cats or "detergente" in cats or "sabão" in cats or "cleaning" in cats:
+                if any(w in cats for w in ("limpeza", "detergente", "sabão", "cleaning", "lavar")):
                     categoria_detectada = "Limpeza"
-                elif "higiene" in cats or "shampoo" in cats or "sabonete" in cats or "cosmetics" in cats:
+                elif any(w in cats for w in ("higiene", "shampoo", "sabonete", "cosmetics", "creme", "dental")):
                     categoria_detectada = "Higiene"
-                elif "bebida" in cats or "beverage" in cats or "refrigerante" in cats or "suco" in cats:
+                elif any(w in cats for w in ("bebida", "beverage", "refrigerante", "suco", "cerveja", "vinho")):
                     categoria_detectada = "Bebidas"
-                elif "remedio" in cats or "medicamento" in cats or "pharma" in cats:
+                elif any(w in cats for w in ("remedio", "medicamento", "pharma", "comprimido")):
                     categoria_detectada = "Medicamentos"
                 
                 if nome:
                     return {
-                        "nome": nome.strip().title(),
+                        "nome": nome.strip().upper(),
                         "categoria": categoria_detectada,
-                        "fornecedor": marca.split(",")[0].strip().title() if marca else ""
+                        "fornecedor": marca.split(",")[0].strip().upper() if marca else "PADRÃO / GERAL"
                     }
     except Exception:
         pass
-
-    # --- TENTATIVA 2: Fallback para simulação de banco comercial genérico ---
-    # Caso a API comunitária falte com itens de limpeza/higiene específicos, 
-    # estruturamos um decodificador de apoio para não deixar o usuário na mão
     return {}
 
 def _decodificar_imagem(imagem_bytes) -> str:
@@ -84,19 +76,13 @@ def _decodificar_imagem(imagem_bytes) -> str:
         return ""
 
 def _disparar_busca(codigo: str):
-    """Dispara a busca externa e armazena os dados encontrados para o autopreenchimento"""
     if not codigo.strip():
         return
-        
     st.session_state[_K_CODIGO] = codigo.strip()
-    
-    # Busca no grande banco de dados da Internet
     dados_da_internet = _consultar_banco_mundial_ean(codigo.strip())
-    
     if dados_da_internet:
         st.session_state[_K_RESULTADO] = {**dados_da_internet, "_status": "encontrado"}
     else:
-        # Código válido, mas não mapeado na internet (Produto muito local ou novo)
         st.session_state[_K_RESULTADO] = {"_status": "nao_encontrado"}
 
 # ── RENDERIZAÇÃO DA TELA ──────────────────────────────────────────────────────
@@ -119,14 +105,13 @@ def show_cadastro():
         codigo_atual = st.text_input(
             "Código de Barras (EAN)",
             value=st.session_state[_K_CODIGO],
-            placeholder="Aperte Enter ao digitar ou use o leitor de mão/massa",
+            placeholder="Aperte Enter ao digitar ou use o leitor físico",
             key="campo_ean_real",
             label_visibility="collapsed"
         )
     with col_btn:
         btn_forcar = st.button("🔍 Buscar", use_container_width=True)
 
-    # Captura automática (Quando o leitor joga o código ou o usuário aperta Enter)
     if codigo_atual and codigo_atual != st.session_state[_K_CODIGO]:
         _disparar_busca(codigo_atual)
         st.rerun()
@@ -135,8 +120,7 @@ def show_cadastro():
         _disparar_busca(codigo_atual)
         st.rerun()
 
-    # Opção de Câmera do Dispositivo
-    usar_cam = st.checkbox("📸 Ligar câmera do celular / notebook para escanear", value=st.session_state[_K_CAM_ON])
+    usar_cam = st.checkbox("📸 Ligar câmera do dispositivo para escanear", value=st.session_state[_K_CAM_ON])
     st.session_state[_K_CAM_ON] = usar_cam
 
     if usar_cam:
@@ -148,40 +132,31 @@ def show_cadastro():
                 _disparar_busca(codigo_capturado)
                 st.session_state[_K_CAM_ON] = False
                 st.rerun()
-            else:
-                st.warning("⚠️ Código de barras não focado ou ilegível. Tente aproximar o produto.")
 
-    # Mensagens de Status do Autopreenchimento
     res_atual = st.session_state[_K_RESULTADO]
     status_busca = res_atual.get("_status", "")
 
     if status_busca == "encontrado":
-        st.success(f"⚡ **Autopreenchimento Ativo:** O produto **'{res_atual.get('nome')}'** foi localizado na base comercial!")
-    elif status_busca == "nao_encontrado":
-        st.info("ℹ️ Código lido com sucesso, mas o produto não consta na base nacional. Digite os dados manualmente abaixo.")
+        st.success(f"⚡ **Autopreenchimento Ativo:** O produto **'{res_atual.get('nome')}'** foi localizado com sucesso!")
 
     st.markdown("---")
     st.markdown("### 2️⃣ Informações de Cadastro")
 
-    # Extração dos dados vindos da internet para AUTO-PREENCHIMENTO dos campos
     val_nome  = res_atual.get("nome", "")
     val_cat   = res_atual.get("categoria", "Alimentos")
-    val_marca = res_atual.get("fornecedor", "")
+    val_marca = res_atual.get("fornecedor", "PADRÃO / GERAL")
 
     idx_cat = CATEGORIAS.index(val_cat) if val_cat in CATEGORIAS else 0
 
-    # FORMULÁRIO DE ENTRADA DO USUÁRIO
     with st.form("formulario_cadastro_smart", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
-            # CAMPOS AUTOMÁTICOS (Puxados da Internet)
-            prod_nome = st.text_input("Nome do Produto *", value=val_nome, placeholder="Preenchido automaticamente ou digite aqui")
+            prod_nome = st.text_input("Nome do Produto *", value=val_nome)
             prod_cat  = st.selectbox("Categoria *", CATEGORIAS, index=idx_cat)
-            prod_fab  = st.text_input("Fornecedor / Marca", value=val_marca, placeholder="Ex: Unilever, Nestlé, P&G")
-            prod_lote = st.text_input("Número do Lote (Opcional)", placeholder="Ex: L105")
+            prod_fab  = st.text_input("Fornecedor / Marca", value=val_marca)
+            prod_lote = st.text_input("Número do Lote (Opcional)")
             
         with c2:
-            # CAMPOS MANUAIS (O que só o Alex sabe sobre o estoque dele)
             prod_qtd  = st.number_input("Quantidade em Estoque *", min_value=0.0, step=1.0, value=1.0, format="%.2f")
             prod_un   = st.selectbox("Unidade de Medida", UNIDADES, index=0)
             prod_val  = st.date_input("Data de Validade *", value=date.today())
@@ -191,57 +166,51 @@ def show_cadastro():
         with c3:
             prod_min = st.number_input("Estoque Mínimo de Alerta", min_value=0.0, step=1.0, value=0.0, format="%.1f")
         with c4:
-            prod_loc = st.text_input("Localização física no Almoxarifado", placeholder="Ex: Prateleira B, Setor Frios")
+            prod_loc = st.text_input("Localização física no Almoxarifado")
 
-        prod_obs = st.text_area("Observações Gerais", placeholder="Notas adicionais sobre o lote...")
+        prod_obs = st.text_area("Observações Gerais")
 
         st.markdown("<br>", unsafe_allow_html=True)
         btn_salvar = st.form_submit_button("💾 Confirmar e Registrar no Supabase", type="primary", use_container_width=True)
 
-    # PROCESSAMENTO DO SALVAMENTO LOCAL (SUPABASE)
     if btn_salvar:
         if not prod_nome.strip():
             st.error("❌ O nome do produto precisa estar preenchido!")
-        elif prod_qtd <= 0:
-            st.error("❌ A quantidade inicial deve ser maior que zero!")
+        elif prod_qtd < 0:
+            st.error("❌ A quantidade inicial não pode ser negativa!")
         else:
             if not db:
                 st.error("❌ Banco de dados local inacessível.")
                 return
 
-            # Montagem do registro final para salvar no seu banco de dados
             payload = {
-                "nome":            prod_nome.strip(),
+                "nome":            prod_nome.strip().upper(),
                 "categoria":       prod_cat,
-                "quantidade":      prod_qtd,
+                "quantidade":      float(prod_qtd),
                 "unidade":         prod_un,
                 "validade":        str(prod_val),
                 "lote":            prod_lote.strip() or None,
-                "fornecedor":      prod_fab.strip() or None,
-                "localizacao":     prod_loc.strip() or None,
-                "preco_custo":     prod_cost if prod_cost > 0 else None,
-                "estoque_minimo":  prod_min if prod_min > 0 else None,
+                "fornecedor":      prod_fab.strip() or "PADRÃO / GERAL",
+                "localizacao":     prod_loc.strip() or "DISPENSA",
+                "preco_custo":     float(prod_cost),
+                "estoque_minimo":  float(prod_min),
                 "observacoes":     prod_obs.strip() or None,
-                "empresa_id":      empresa_id,
-                "user_id":         user_id,
-                "criado_por":      username
+                "empresa_id":      int(empresa_id),
+                "user_id":         int(user_id),
+                "criado_por":      str(username)
             }
 
-            # Tenta salvar respeitando a variação de nomes de colunas do seu banco
+            # Envio seguro tentando mapear o nome correto da coluna de código
             for col_nome in ("codigo_barras", "codigo"):
                 try:
                     envio = payload.copy()
                     if st.session_state[_K_CODIGO]:
                         envio[col_nome] = st.session_state[_K_CODIGO]
                     
-                    # Limpa chaves vazias
-                    envio = {k: v for k, v in envio.items() if v is not None}
-                    
                     res = db.table("produtos").insert(envio).execute()
                     if res.data:
-                        st.success(f"🎉 Produto '{prod_nome}' registrado com sucesso no estoque!")
+                        st.success(f"🎉 Produto registrado com sucesso no estoque!")
                         st.balloons()
-                        # Reseta a busca para o próximo produto
                         st.session_state[_K_CODIGO] = ""
                         st.session_state[_K_RESULTADO] = {}
                         st.rerun()
