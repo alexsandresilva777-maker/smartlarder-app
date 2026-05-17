@@ -86,7 +86,7 @@ def show_cadastro():
             unidade = st.selectbox("Unidade de Medida", UNIDADES, index=0)
             data_validade = st.date_input("Data de Validade *", value=datetime.now(_TZ).date())
             preco_custo = st.number_input("Preço de Custo (R$)", min_value=0.0, step=0.01, format="%.2f")
-            localizacao = st.text_input("Localização física no Almoxarifado", placeholder="Ex: ARRMÁRIO DE ALIMENTOS / DISPENSA")
+            localizacao = st.text_input("Localização física no Almoxarifado", placeholder="Ex: ARMÁRIO DE ALIMENTOS / DESPENSA")
 
         observacoes = st.text_area("Observações Gerais", placeholder="Ex: PRODUTO OBTIDO ATRAVÉS DE DOAÇÃO DE CESTA BÁSICA")
 
@@ -98,21 +98,33 @@ def show_cadastro():
             st.error("❌ O campo 'Nome do Produto' é obrigatório.")
             return
 
-        # Montagem do payload estritamente com as colunas oficiais validadas
+        # ENGENHARIA REVERSA DE TEXTO:
+        # Juntamos as variáveis adicionais dentro do campo localizacao que já existe no banco.
+        # Ficará visível assim no seu produtos.py: "ARMÁRIO DE ALIMENTOS [Fornecedor: ROBERTA | Lote: 02:41] Obs: DOAÇÃO"
+        info_localizacao = localizacao.strip() if localizacao.strip() else "Almoxarifado"
+        detalhes_extras = []
+        
+        if onde_comprou.strip(): detalhes_extras.append(f"Fornecedor: {onde_comprou.strip().upper()}")
+        if lote.strip(): detalhes_extras.append(f"Lote: {lote.strip()}")
+        if observacoes.strip(): detalhes_extras.append(f"Obs: {observacoes.strip().upper()}")
+        
+        if detalhes_extras:
+            string_final_localizacao = f"{info_localizacao} [{' | '.join(detalhes_extras)}]"
+        else:
+            string_final_localizacao = info_localizacao
+
+        # Payload montado estritamente com as colunas que seu produtos.py usa e aprova
         payload = {
             "empresa_id": int(empresa_id),
             "barcode": barcode_input.strip() if barcode_input.strip() else None,
             "nome": nome.strip().upper(),
             "categoria": categoria,
             "quantidade": float(quantidade),
-            "unidade": unidade,  # Corrigido de 'unit' para 'unidade'
+            "unidade": unidade,
             "quantidade_minima": float(quantidade_minima),
             "preco_custo": float(preco_custo),
             "data_validade": str(data_validade),
-            "localizacao": localizacao.strip() if localizacao.strip() else None,
-            "lote": lote.strip() if lote.strip() else None,
-            "fornecedor": onde_comprou.strip() if onde_comprou.strip() else None,
-            "observacoes": observacoes.strip() if observacoes.strip() else None
+            "localizacao": string_final_localizacao  # Salvando tudo aqui sem quebrar o schema cache
         }
 
         try:
@@ -120,7 +132,7 @@ def show_cadastro():
                 supabase.table("produtos").insert(payload).execute()
                 st.success(f"🎉 Produto '{nome.strip().upper()}' cadastrado com sucesso!")
                 
-                # Reseta a busca para o próximo produto
+                # Reseta o formulário
                 st.session_state["cadastro_nome"] = ""
                 st.session_state["cadastro_cat"] = "Alimentos"
                 st.rerun()
