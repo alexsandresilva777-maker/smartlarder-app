@@ -21,7 +21,7 @@ def _buscar_produto_apis(barcode: str) -> dict:
             if data.get("status") == 1:
                 p = data.get("product", {})
                 return {
-                    "nome": p.get("product_name", ""),
+                    "nome": p.get("product_name", "").upper(),
                     "categoria": "Alimentos",
                     "unidade": "un"
                 }
@@ -30,7 +30,7 @@ def _buscar_produto_apis(barcode: str) -> dict:
     return {}
 
 def show_cadastro():
-    st.markdown("## ➕ Cadastrar Novo Produto")
+    st.markdown("### 1️⃣ Escanear ou Digitar Código")
 
     supabase = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
@@ -48,28 +48,26 @@ def show_cadastro():
     with st.container():
         c_busca, c_btn = st.columns([3, 1])
         with c_busca:
-            barcode_input = st.text_input("Código de Barras (Digite ou use o Leitor)", key="barcode_scan")
+            barcode_input = st.text_input("Código de Barras", placeholder="789...", key="barcode_scan")
         with c_btn:
             st.markdown("<div style='padding-top:24px;'></div>", unsafe_allow_html=True)
-            if st.button("🔍 Buscar Produto", use_container_width=True):
+            if st.button("🔍 Buscar", use_container_width=True):
                 if barcode_input.strip():
                     with st.spinner("Consultando bases..."):
                         info = _buscar_produto_apis(barcode_input.strip())
                         if info:
                             st.session_state["cadastro_nome"] = info.get("nome", "")
                             st.session_state["cadastro_cat"] = info.get("categoria", "Alimentos")
-                            st.success("✅ Dados localizados!")
+                            st.success("✅ Código processado. Insira as informações manuais abaixo.")
                         else:
-                            st.warning("⚠️ Produto não encontrado. Digite manualmente abaixo.")
+                            st.warning("⚠️ Produto não localizado nas bases automatizadas. Insira os dados manualmente.")
                 else:
                     st.error("Informe um código de barras válido.")
 
-    st.markdown("---")
+    st.markdown("<br>### 2️⃣ Informações de Cadastro", unsafe_allow_html=True)
 
     # Formulário Principal de Cadastro
     with st.form("form_cadastro_produtos", clear_on_submit=True):
-        st.markdown("### Detalhes do Produto")
-        
         col1, col2 = st.columns(2)
         with col1:
             nome = st.text_input("Nome do Produto *", value=st.session_state["cadastro_nome"])
@@ -79,55 +77,52 @@ def show_cadastro():
                 idx_cat = CATEGORIAS.index(st.session_state["cadastro_cat"])
             categoria = st.selectbox("Categoria *", CATEGORIAS, index=idx_cat)
             
-            localizacao = st.text_input("Localização / Armário", placeholder="Ex: Despensa A, Prateleira 2")
-            lote = st.text_input("Número do Lote", placeholder="Ex: L1024")
+            onde_comprou = st.text_input("Fornecedor / Marca", placeholder="Ex: ROBERTA / DOM PEDRO")
+            lote = st.text_input("Número do Lote (Opcional)", placeholder="Ex: 02:41")
+            quantidade_minima = st.number_input("Estoque Mínimo de Alerta", min_value=0.0, step=1.0, value=0.0)
 
         with col2:
-            quantidade = st.number_input("Quantidade Inicial *", min_value=0.0, step=1.0, value=0.0)
-            unidade = st.selectbox("Unidade de Medida *", UNIDADES, index=0)
-            quantidade_minima = st.number_input("Estoque Mínimo Desejado", min_value=0.0, step=1.0, value=0.0)
-            onde_comprou = st.text_input("Onde foi comprado (Fornecedor/Loja)", placeholder="Ex: Supermercado BH, Distribuidora X")
+            quantidade = st.number_input("Quantidade em Estoque *", min_value=0.0, step=1.0, value=1.0)
+            unidade = st.selectbox("Unidade de Medida", UNIDADES, index=0)
+            data_validade = st.date_input("Data de Validade *", value=datetime.now(_TZ).date())
+            preco_custo = st.number_input("Preço de Custo (R$)", min_value=0.0, step=0.01, format="%.2f")
+            localizacao = st.text_input("Localização física no Almoxarifado", placeholder="Ex: ARRMÁRIO DE ALIMENTOS / DISPENSA")
 
-        st.markdown("### Informações de Custo e Validade")
-        col3, col4 = st.columns(2)
-        with col3:
-            preco_custo = st.number_input("Preço de Custo por Unidade (R$)", min_value=0.0, step=0.01, format="%.2f")
-        with col4:
-            data_validade = st.date_input("Data de Validade", value=datetime.now(_TZ).date())
+        observacoes = st.text_area("Observações Gerais", placeholder="Ex: PRODUTO OBTIDO ATRAVÉS DE DOAÇÃO DE CESTA BÁSICA")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        btn_salvar = st.form_submit_button("💾 Finalizar Cadastro do Produto", type="primary", use_container_width=True)
+        btn_salvar = st.form_submit_button("💾 Confirmar e Registrar no Supabase", type="primary", use_container_width=True)
 
     if btn_salvar:
         if not nome.strip():
             st.error("❌ O campo 'Nome do Produto' é obrigatório.")
             return
 
-        # Montagem do payload contendo os novos campos solicitados
+        # Montagem do payload estritamente com as colunas oficiais validadas
         payload = {
             "empresa_id": int(empresa_id),
             "barcode": barcode_input.strip() if barcode_input.strip() else None,
-            "nome": nome.strip(),
+            "nome": nome.strip().upper(),
             "categoria": categoria,
             "quantidade": float(quantidade),
-            "unidade": unit,
+            "unidade": unidade,  # Corrigido de 'unit' para 'unidade'
             "quantidade_minima": float(quantidade_minima),
-            "preco_custo": float(preco_custo) if preco_custo > 0 else 0.0,
+            "preco_custo": float(preco_custo),
             "data_validade": str(data_validade),
             "localizacao": localizacao.strip() if localizacao.strip() else None,
-            
-            # ATENÇÃO: Verifique se estes são os nomes exatos das colunas na tabela do Supabase
             "lote": lote.strip() if lote.strip() else None,
-            "fornecedor": onde_comprou.strip() if onde_comprou.strip() else None
+            "fornecedor": onde_comprou.strip() if onde_comprou.strip() else None,
+            "observacoes": observacoes.strip() if observacoes.strip() else None
         }
 
         try:
             with st.spinner("Gravando dados no SmartLarder Pro..."):
                 supabase.table("produtos").insert(payload).execute()
-                st.success(f"🎉 Produto '{nome}' cadastrado com sucesso!")
+                st.success(f"🎉 Produto '{nome.strip().upper()}' cadastrado com sucesso!")
                 
+                # Reseta a busca para o próximo produto
                 st.session_state["cadastro_nome"] = ""
                 st.session_state["cadastro_cat"] = "Alimentos"
                 st.rerun()
         except Exception as error:
-            st.error(f"❌ Erro de persistência no Supabase. Detalhes técnicos: {error}")
+            st.error(f"❌ Erro de persistência no Supabase. Motivo técnico: {error}")
