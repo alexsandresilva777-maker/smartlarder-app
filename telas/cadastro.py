@@ -47,7 +47,7 @@ def buscar_openfoodfacts(codigo):
         nome_base = p.get("product_name", "").strip()
         marca = p.get("brands", "").strip()
         
-        # Junta Marca + Nome no mesmo texto para respeitar seu banco
+        # Junta Marca + Nome para respeitar a estrutura de colunas do banco
         if marca and nome_base:
             if nome_base.lower().startswith(marca.lower()):
                 nome_completo = nome_base
@@ -96,7 +96,7 @@ def parse_localizacao(txt):
     return local, fornecedor, lote, obs
 
 # =========================================================
-# BUSCA RETORNANDO APENAS COLUNAS REAIS
+# BUSCA DIRETAMENTE NAS COLUNAS REAIS
 # =========================================================
 def buscar_produto(db, empresa_id, codigo):
     colunas = ["barcode", "codigo_barras", "codigo"]
@@ -114,8 +114,6 @@ def buscar_produto(db, empresa_id, codigo):
 # =========================================================
 def processar_busca(db, empresa_id, codigo):
     codigo = str(codigo).strip()
-    if not code: # Fallback de segurança para a string
-        codigo = str(st.session_state.cad_barcode).strip()
     if not codigo:
         return
 
@@ -163,7 +161,7 @@ def processar_busca(db, empresa_id, codigo):
         st.session_state.produto_id = None
 
 # =========================================================
-# COMPACTAR E CORRAR STRINGS (MÁXIMO 100 CARACTERES)
+# COMPACTAR E CORTAR STRINGS (MÁXIMO 100 CARACTERES)
 # =========================================================
 def montar_localizacao(local, fornecedor, lote, obs):
     local = str(local).strip()
@@ -247,7 +245,6 @@ def show_cadastro():
             if nome_final:
                 local_final = montar_localizacao(localizacao, fornecedor, lote, obs)
 
-                # MAPA COMPATÍVEL 100% COM SEU SCHEMA REAL DO SUPABASE
                 payload = {
                     "empresa_id": int(empresa_id),
                     "barcode": codigo.strip() if codigo.strip() else None,
