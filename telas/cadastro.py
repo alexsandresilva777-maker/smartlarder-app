@@ -65,36 +65,34 @@ def show_cadastro():
     st.markdown("## ➕ Cadastrar Novo Produto")
     st.markdown("---")
     
-    # Seção de Captura / Entrada do Código
     st.markdown("### 1️⃣ Identificação do Produto")
     
-    # Ativador da Câmera (Scanner)
+    # Ativador da Câmera
     usar_camera = st.checkbox("📸 Acionar Scanner (Câmera do Celular/PC)", key="scanner_camera")
     
-    c_codigo = ""
     if usar_camera:
-        # Abre o input de câmera nativo do Streamlit
         img_file = st.camera_input("Posicione o código de barras na câmera")
         if img_file:
-            st.info("📷 Imagem capturada. (Nota: Integração de decodificação de imagem para EAN requer biblioteca externa).")
+            st.info("📋 Imagem obtida com sucesso. Digite o número correspondente no campo abaixo para validar.")
     
-    # Campo de digitação/leitura manual
-    c_codigo = st.text_input("Digite ou escaneie o código de barras (EAN)", value=c_codigo, key="cadastro_cod_barras")
+    # Campo de digitação sempre visível e persistente
+    c_codigo = st.text_input("Digite ou escaneie o código de barras (EAN)", key="cadastro_cod_barras")
     
-    # Botão de Busca Explicitado na Tela
-    btn_buscar = st.button("🔍 Verificar Código no Banco", type="secondary")
+    # BOTÃO BUSCAR SEMPRE FIXO NA TELA
+    btn_buscar = st.button("🔍 Verificar Código no Banco", type="secondary", use_container_width=True)
     
-    # Executa a verificação se o botão for clicado ou se já houver texto digitado
-    if c_codigo.strip() and (btn_buscar or st.session_state.get("verificado", False)):
-        produto_existente = DB_buscar_produto_por_codigo(c_codigo.strip())
-        if produto_existente:
-            st.warning(f"📦 Atenção: O produto **{produto_existente.get('nome')}** já está cadastrado!")
-            with st.expander("Visualizar dados do produto existente"):
-                st.json(produto_existente)
-            return
-        else:
-            st.success("✅ Código livre para novo cadastro!")
-            st.session_state["verificado"] = True
+    # Lógica de verificação persistente baseada no clique do botão ou valor existente
+    if c_codigo.strip():
+        if btn_buscar or st.session_state.get("ultimo_codigo_checado") == c_codigo.strip():
+            st.session_state["ultimo_codigo_checado"] = c_codigo.strip()
+            
+            produto_existente = DB_buscar_produto_por_codigo(c_codigo.strip())
+            if produto_existente:
+                st.warning(f"📦 Atenção: O produto **{produto_existente.get('nome')}** já está cadastrado!")
+                with st.expander("Visualizar dados do produto existente"):
+                    st.json(produto_existente)
+            else:
+                st.success("✅ Código livre para novo cadastro!")
 
     st.markdown("---")
     st.markdown("### 2️⃣ Dados do Produto")
@@ -118,13 +116,16 @@ def show_cadastro():
         btn_salvar = st.form_submit_button("💾 Salvar Produto no Estoque", type="primary", use_container_width=True)
         
         if btn_salvar:
+            # Puxa o código atual direto do input text
+            codigo_final = st.session_state.get("cadastro_cod_barras", "").strip()
+            
             if not p_nome.strip():
                 st.error("❌ O nome do produto é obrigatório!")
-            elif not c_codigo.strip():
+            elif not codigo_final:
                 st.error("❌ É necessário informar um código de barras válido antes de salvar.")
             else:
                 novo_produto = {
-                    "codigo_barras": str(c_codigo.strip()),
+                    "codigo_barras": str(codigo_final),
                     "nome": str(p_nome.strip()),
                     "categoria": str(p_categoria),
                     "quantidade": int(p_qtd),
@@ -137,7 +138,8 @@ def show_cadastro():
                 sucesso, mensagem = DB_salvar_novo_produto(novo_produto)
                 if sucesso:
                     st.success(f"🎉 {mensagem}")
-                    st.session_state["verificado"] = False
+                    if "ultimo_codigo_checado" in st.session_state:
+                        del st.session_state["ultimo_codigo_checado"]
                     st.rerun()
                 else:
                     st.error(f"❌ {mensagem}")
