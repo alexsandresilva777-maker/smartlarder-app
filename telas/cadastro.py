@@ -24,6 +24,7 @@ def init_state():
         "ultimo_codigo_buscado": "",
         "produto_id": None,
         "produto_existente": False,
+        "form_id_cadastro": 0,  # Controla o reset completo dos campos amarrados a chaves
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -197,10 +198,12 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
+    # Modificamos a chave dinamicamente para forçar a limpeza completa do input ao salvar
+    key_barcode = f"cad_barcode_{st.session_state.form_id_cadastro}"
+
     col1, col2 = st.columns([4, 1])
     with col1:
-        # O widget gerencia seu próprio estado através da chave interna
-        codigo = st.text_input("Código de Barras (EAN)", key="cad_barcode")
+        codigo = st.text_input("Código de Barras (EAN)", key=key_barcode)
     with col2:
         st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
         buscar = st.button("🔎 Buscar", use_container_width=True)
@@ -209,7 +212,8 @@ def show_cadastro():
         processar_busca(db, empresa_id, codigo)
         st.rerun()
 
-    with st.form("form_cadastro_final", clear_on_submit=False):
+    # O form_id muda ao salvar com sucesso, forçando o Streamlit a zerar todos os elementos internos
+    with st.form(key=f"form_cadastro_final_{st.session_state.form_id_cadastro}", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
         with c1:
@@ -250,7 +254,7 @@ def show_cadastro():
                     "nome": nome_final,
                     "categoria": categoria,
                     "quantidade": int(qtd),
-                    "unidade": unity if 'unity' in locals() else unidade,
+                    "unidade": unidade,
                     "quantidade_minima": int(qtd_min),
                     "preco_custo": float(preco),
                     "data_validade": validade.strftime("%Y-%m-%d"),
@@ -267,20 +271,25 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Limpeza segura de chaves que NÃO estão amarradas a widgets via key direto no form
-                     chaves_para_resetar = [
-                        "cad_nome", "cad_categoria", "cad_unidade", "cad_quantidade", 
-                        "cad_qtd_min", "cad_preco", "cad_localizacao", "cad_fornecedor", 
-                        "cad_lote", "cad_obs", "ultimo_codigo_buscado"
-                    ]
-                    for k in chaves_para_resetar:
-                        if k in st.session_state:
-                            del st.session_state[k]
-                    
+                    # Reset seguro das variáveis internas de controle
+                    st.session_state.cad_nome = ""
+                    st.session_state.cad_categoria = "Outros"
+                    st.session_state.cad_unidade = "un"
+                    st.session_state.cad_quantidade = 0
+                    st.session_state.cad_qtd_min = 0
+                    st.session_state.cad_preco = 0.0
+                    st.session_state.cad_validade = date.today()
+                    st.session_state.cad_localizacao = ""
+                    st.session_state.cad_fornecedor = ""
+                    st.session_state.cad_lote = ""
+                    st.session_state.cad_obs = ""
+                    st.session_state.ultimo_codigo_buscado = ""
                     st.session_state.produto_id = None
                     st.session_state.produto_existente = False
+                    
+                    # Incrementa o form_id. Isso limpa magicamente todos os inputs na tela
+                    st.session_state.form_id_cadastro += 1
 
-                    # O rerun recarrega o app limpando naturalmente os inputs controlados
                     st.rerun()
 
                 except Exception as e:
