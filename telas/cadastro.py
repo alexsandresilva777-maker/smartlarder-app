@@ -127,7 +127,6 @@ def processar_busca(db, empresa_id, codigo):
 
             local, forn, lote, obs = parse_localizacao(produto.get("localizacao", ""))
 
-            # Alimenta o State com o que veio do banco de dados
             st.session_state.cad_nome = str(produto.get("nome", "")).upper()
             st.session_state.cad_categoria = produto.get("categoria", "Outros")
             st.session_state.cad_quantidade = int(produto.get("quantidade", 0))
@@ -146,19 +145,20 @@ def processar_busca(db, empresa_id, codigo):
                     st.session_state.cad_validade = date.today()
 
             st.success("✅ Produto localizado no banco de dados!")
+            # CORREÇÃO: Força a mudança do ID do formulário para renderizar o retorno na tela
+            st.session_state.form_id_cadastro += 1
             return
 
-        # Se não achou no banco, tenta a API pública
         api = buscar_openfoodfacts(codigo)
         if api:
             if api.get("nome"):
                 st.session_state.cad_nome = api["nome"].upper()
             st.session_state.cad_categoria = api.get("categoria", "Outros")
             st.info("🌐 Produto localizado na internet.")
+            st.session_state.form_id_cadastro += 1
         else:
             st.warning("⚠️ Produto não cadastrado. Continue manualmente.")
 
-        # Reseta os controles de ID se for um produto inteiramente novo
         st.session_state.produto_existente = False
         st.session_state.produto_id = None
 
@@ -201,11 +201,10 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    key_barcode = f"cad_barcode_{st.session_state.form_id_cadastro}"
-
+    # Mantemos o campo de busca isolado e fixo para não perder o foco ao digitar
     col1, col2 = st.columns([4, 1])
     with col1:
-        codigo = st.text_input("Código de Barras (EAN)", key=key_barcode)
+        codigo = st.text_input("Código de Barras (EAN)", key="cad_barcode_input_field")
     with col2:
         st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
         buscar = st.button("🔎 Buscar", use_container_width=True)
@@ -214,7 +213,7 @@ def show_cadastro():
         processar_busca(db, empresa_id, codigo)
         st.rerun()
 
-    # O segredo do retorno está aqui: chaves amarradas dinamicamente ao ID do form garantem o redesenho dos dados
+    # O formulário reconstrói dinamicamente trazendo os dados da busca para os 'value'
     with st.form(key=f"form_cadastro_final_{st.session_state.form_id_cadastro}", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
@@ -273,7 +272,7 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Reseta as variáveis internas para a próxima digitação
+                    # Reset total pós-salvamento
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
                     st.session_state.cad_unidade = "un"
@@ -289,9 +288,7 @@ def show_cadastro():
                     st.session_state.produto_id = None
                     st.session_state.produto_existente = False
                     
-                    # Muda o ID do form, limpando a tela visualmente para a próxima entrada
                     st.session_state.form_id_cadastro += 1
-
                     st.rerun()
 
                 except Exception as e:
