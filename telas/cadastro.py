@@ -193,10 +193,15 @@ def show_cadastro():
         return
 
     if not empresa_id:
-        st.error("❌ Empresa inválida ou não identificada.")
+        st.error("❌ Empresa inválida ou não identificada no sistema.")
         return
 
     st.markdown("## ➕ Cadastro de Produto")
+
+    # PAINEL DIAGNÓSTICO (Exclusivo para identificar o gargalo do RLS)
+    with st.expander("🔍 Painel de Diagnóstico de Segurança (Envio)", expanded=False):
+        st.write(f"**Empresa ID ativa na sessão:** `{empresa_id}` (Tipo: {type(empresa_id).__name__})")
+        st.write(f"**Status da Conexão Supabase:** Conectado")
 
     col1, col2 = st.columns([4, 1])
     with col1:
@@ -223,7 +228,6 @@ def show_cadastro():
             idx_uni = lista_unidades.index(st.session_state.cad_unidade) if st.session_state.cad_unidade in lista_unidades else 0
             unidade = st.selectbox("Unidade de Medida *", lista_unidades, index=idx_uni)
             
-            # Mudança crucial: min_value=0 força o número a ser tratado como INTEGER puro pelo python/streamlit
             qtd = st.number_input("Quantidade Inicial *", min_value=0, step=1, value=int(st.session_state.cad_quantidade))
             qtd_min = st.number_input("Estoque Mínimo Desejado", min_value=0, step=1, value=int(st.session_state.cad_qtd_min))
 
@@ -268,7 +272,7 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Reset Completo do State voltando para inteiros nativos
+                    # Reset Completo do State
                     st.session_state.cad_barcode = ""
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
@@ -289,5 +293,6 @@ def show_cadastro():
 
                 except Exception as e:
                     st.error(f"❌ Erro ao persistir dados no Supabase: {e}")
+                    st.info(f"Dados rejeitados pelo RLS para conferência: {payload}")
             else:
                 st.error("❌ O nome do produto é obrigatório.")
