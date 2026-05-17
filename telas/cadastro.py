@@ -3,17 +3,27 @@ import streamlit as st
 import datetime
 
 def DB_buscar_produto_por_codigo(codigo):
-    """Busca um produto direto no Supabase pelo código de barras de forma segura"""
+    """Busca um produto no Supabase tentando as variações comuns de nome de coluna"""
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     if not db or not codigo:
         return None
+    
+    # Tentativa 1: Coluna 'codigo_barras'
     try:
         res = db.table("produtos").select("*").eq("empresa_id", empresa_id).eq("codigo_barras", str(codigo)).execute()
-        return res.data[0] if res.data else None
-    except Exception as e:
-        st.warning(f"Aviso na busca por código: {e}")
-        return None
+        if res.data: return res.data[0]
+    except:
+        pass
+
+    # Tentativa 2: Coluna 'codigo'
+    try:
+        res = db.table("produtos").select("*").eq("empresa_id", empresa_id).eq("codigo", str(codigo)).execute()
+        if res.data: return res.data[0]
+    except:
+        pass
+        
+    return None
 
 def DB_listar_fornecedores_cadastro():
     """Busca fornecedores para o selectbox. Retorna fallback caso a tabela não exista."""
@@ -27,43 +37,69 @@ def DB_listar_fornecedores_cadastro():
             return [f["nome"] for f in res.data]
         return ["Padrão / Geral"]
     except:
-        # Fallback seguro caso a tabela de fornecedores ainda não tenha sido criada no Supabase
         return ["Padrão / Geral", "Itambé Distribuidora", "Ambev S/A", "Nestlé Atacado"]
 
 def DB_salvar_novo_produto(dados):
-    """Insere um novo produto no banco de dados Supabase"""
+    """Insere um novo produto adaptando o nome da coluna de código de barras se necessário"""
     db = st.session_state.get("db")
     if not db:
         return False, "Banco de dados inacessível."
+    
     try:
         db.table("produtos").insert(dados).execute()
         return True, "Produto cadastrado com sucesso!"
     except Exception as e:
+        msg_erro = str(e)
+        if "codigo_barras" in msg_erro or "42703" in msg_erro:
+            try:
+                dados_adaptados = dados.copy()
+                if "codigo_barras" in dados_adaptados:
+                    dados_adaptados["codigo"] = dados_adaptados.pop("codigo_barras")
+                db.table("produtos").insert(dados_adaptados).execute()
+                return True, "Produto cadastrado com sucesso! (Mapeamento adaptado)"
+            except Exception as err_interno:
+                return False, f"Erro ao salvar no banco (Adaptado): {err_interno}"
         return False, f"Erro ao salvar no banco: {e}"
 
 def show_cadastro():
     st.markdown("## ➕ Cadastrar Novo Produto")
     st.markdown("---")
     
-    # Seção 1: Busca/Verificação prévia do código de barras
-    st.markdown("### 1️⃣ Verificação de Código de Barras")
-    c_codigo = st.text_input("Digite ou escaneie o código de barras (EAN)", key="cadastro_cod_barras")
+    # Seção de Captura / Entrada do Código
+    st.markdown("### 1️⃣ Identificação do Produto")
     
-    produto_existente = None
-    if c_codigo.strip():
+    # Ativador da Câmera (Scanner)
+    usar_camera = st.checkbox("📸 Acionar Scanner (Câmera do Celular/PC)", key="scanner_camera")
+    
+    c_codigo = ""
+    if usar_camera:
+        # Abre o input de câmera nativo do Streamlit
+        img_file = st.camera_input("Posicione o código de barras na câmera")
+        if img_file:
+            st.info("📷 Imagem capturada. (Nota: Integração de decodificação de imagem para EAN requer biblioteca externa).")
+    
+    # Campo de digitação/leitura manual
+    c_codigo = st.text_input("Digite ou escaneie o código de barras (EAN)", value=c_codigo, key="cadastro_cod_barras")
+    
+    # Botão de Busca Explicitado na Tela
+    btn_buscar = st.button("🔍 Verificar Código no Banco", type="secondary")
+    
+    # Executa a verificação se o botão for clicado ou se já houver texto digitado
+    if c_codigo.strip() and (btn_buscar or st.session_state.get("verificado", False)):
         produto_existente = DB_buscar_produto_por_codigo(c_codigo.strip())
         if produto_existente:
-            st.warning(f"📦 Atenção: O produto **{produto_existente.get('nome')}** já está cadastrado com este código de barras!")
+            st.warning(f"📦 Atenção: O produto **{produto_existente.get('nome')}** já está cadastrado!")
             with st.expander("Visualizar dados do produto existente"):
                 st.json(produto_existente)
             return
+        else:
+            st.success("✅ Código livre para novo cadastro!")
+            st.session_state["verificado"] = True
 
+    st.markdown("---")
     st.markdown("### 2️⃣ Dados do Produto")
-    
-    # Carrega a lista de fornecedores de forma segura
     lista_fornecedores = DB_listar_fornecedores_cadastro()
     
-    # Formulário do Streamlit com botão de envio obrigatório no final
     with st.form("form_cadastro_produto", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
@@ -79,7 +115,6 @@ def show_cadastro():
             
         st.markdown("<small>* Campos obrigatórios</small>", unsafe_allow_html=True)
         
-        # Botão de envio do formulário (Submit)
         btn_salvar = st.form_submit_button("💾 Salvar Produto no Estoque", type="primary", use_container_width=True)
         
         if btn_salvar:
@@ -88,7 +123,6 @@ def show_cadastro():
             elif not c_codigo.strip():
                 st.error("❌ É necessário informar um código de barras válido antes de salvar.")
             else:
-                # Monta a estrutura de dados exatamente como o banco espera
                 novo_produto = {
                     "codigo_barras": str(c_codigo.strip()),
                     "nome": str(p_nome.strip()),
@@ -103,5 +137,7 @@ def show_cadastro():
                 sucesso, mensagem = DB_salvar_novo_produto(novo_produto)
                 if sucesso:
                     st.success(f"🎉 {mensagem}")
+                    st.session_state["verificado"] = False
+                    st.rerun()
                 else:
                     st.error(f"❌ {mensagem}")
