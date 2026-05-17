@@ -27,6 +27,9 @@ def show_cadastro():
     if "produto_existe" not in st.session_state:
         st.session_state["produto_existe"] = False
     
+    if "codigo_bipado" not in st.session_state:
+        st.session_state["codigo_bipado"] = ""
+    
     # Inicializar campos do formulário
     campos_iniciais = {
         "codigo_barras": "",
@@ -47,7 +50,218 @@ def show_cadastro():
         if chave not in st.session_state:
             st.session_state[chave] = valor
     
-    # Formulário布局
+    # Função de busca no banco
+    def buscar_produto_no_banco(ean):
+        produto_encontrado = None
+        
+        # Tenta em barcode primeiro
+        try:
+            result = st.session_state["db"].table("produtos").select("*").eq(
+                "empresa_id", int(st.session_state["empresa_id"])
+            ).eq("barcode", ean).execute()
+            if result.data:
+                produto_encontrado = result.data[0]
+        except Exception:
+            pass
+        
+        # Se não achou, tenta em codigo_barras
+        if not produto_encontrado:
+            try:
+                result = st.session_state["db"].table("produtos").select("*").eq(
+                    "empresa_id", int(st.session_state["empresa_id"])
+                ).eq("codigo_barras", ean).execute()
+                if result.data:
+                    produto_encontrado = result.data[0]
+            except Exception:
+                pass
+        
+        # Se ainda não achou, tenta em codigo
+        if not produto_encontrado:
+            try:
+                result = st.session_state["db"].table("produtos").select("*").eq(
+                    "empresa_id", int(st.session_state["empresa_id"])
+                ).eq("codigo", ean).execute()
+                if result.data:
+                    produto_encontrado = result.data[0]
+            except Exception:
+                pass
+        
+        return produto_encontrado
+    
+    # Função de busca no OpenFoodFacts
+    def buscar_no_openfoodfacts(ean):
+        try:
+            url = f"https://world.openfoodfacts.org/api/v0/product/{ean}.json"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == 1 and data.get("product"):
+                    product = data["product"]
+                    info = {}
+                    if product.get("product_name"):
+                        info["nome"] = product["product_name"]
+                    if product.get("categories"):
+                        cats = product["categories"].split(",")[0].strip()
+                        for cat_padrao in CATEGORIAS:
+                            if cat_padrao.lower() in cats.lower():
+                                info["categoria"] = cat_padrao
+                                break
+                    if product.get("image_url"):
+                        info["imagem"] = product["image_url"]
+                    return info
+        except Exception:
+            pass
+        return None
+    
+    # Função de leitura reversa da localização
+    def ler_localizacao_reversa(local_raw):
+        result = {
+            "localizacao": local_raw,
+            "fornecedor": "",
+            "numero_lote": "",
+            "observacoes": ""
+        }
+        
+        if "[F:" in local_raw and "|L:" in local_raw and "|O:]" in local_raw:
+            try:
+                local_limpo = local_raw.split("[F:")[0].strip()
+                resto = local_raw.split("[F:")[1].rsplit("]", 1)[0]
+                
+                parts = resto.split("|")
+                for part in parts:
+                    if part.startswith("F:"):
+                        result["fornecedor"] = part[2:]
+                    elif part.startswith("L:"):
+                        result["numero_lote"] = part[2:]
+                    elif part.startswith("O:"):
+                        result["observacoes"] = part[2:]
+                
+                result["localizacao"] = local_limpo
+            except Exception:
+                pass
+        
+        return result
+    
+    # Função para popular o formulário com dados do produto
+    def popular_formulario(produto, ean=""):
+        st.session_state["produto_existe"] = True
+        st.session_state["codigo_barras"] = ean or produto.get("barcode", "") or produto.get("codigo_barras", "") or produto.get("codigo", "")
+        st.session_state["nome"] = produto.get("nome", "")
+        st.session_state["categoria"] = produto.get("categoria", "Alimentos")
+        st.session_state["unidade"] = produto.get("unidade", "un")
+        st.session_state["quantidade_inicial"] = float(produto.get("quantidade", 0))
+        st.session_state["estoque_minimo"] = float(produto.get("quantidade_minima", 0))
+        st.session_state["preco_custo"] = float(produto.get("preco_custo", 0))
+        
+        data_valid = produto.get("data_validade")
+        if data_valid:
+            try:
+                if isinstance(data_valid, str):
+                    st.session_state["data_validade"] = datetime.strptime(data_valid, "%Y-%m-%d").date()
+                else:
+                    st.session_state["data_validade"] = data_valid
+            except Exception:
+                st.session_state["data_validade"] = None
+        else:
+            st.session_state["data_validade"] = None
+        
+        # Leitura reversa da localização
+        local_raw = produto.get("localizacao", "")
+        result = ler_localizacao_reversa(local_raw)
+        st.session_state["localizacao"] = result["localizacao"]
+        st.session_state["fornecedor"] = result["fornecedor"]
+        st.session_state["numero_lote"] = result["numero_lote"]
+        st.session_state["observacoes"] = result["observacoes"]
+    
+    # Função principal de busca
+    def realizar_busca(ean):
+        if not ean or ean == st.session_state["ultimo_codigo_buscado"]:
+            return
+        
+        st.session_state["ultimo_codigo_buscado"] = ean
+        st.session_state["produto_existe"] = False
+        
+        with st.spinner("🔍 Buscando produto..."):
+            # Busca no banco
+            produto = buscar_produto_no_banco(ean)
+            
+            if produto:
+                popular_formulario(produto, ean)
+                st.success(f"✅ Produto encontrado no banco! {st.session_state['nome']}")
+            else:
+                # Busca no OpenFoodFacts
+                info_uff = buscar_no_openfoodfacts(ean)
+                
+                if info_uff:
+                    if "nome" in info_uff:
+                        st.session_state["nome"] = info_uff["nome"]
+                    if "categoria" in info_uff:
+                        st.session_state["categoria"] = info_uff["categoria"]
+                    if "imagem" in info_uff:
+                        st.image(info_uff["imagem"], width=200)
+                    
+                    st.info(f"ℹ️ Produto não cadastrado. Dados do OpenFoodFacts preenchidos: {st.session_state['nome']}")
+                else:
+                    st.session_state["codigo_barras"] = ean
+                    st.info("ℹ️ Produto não encontrado. Preencha o cadastro manualmente.")
+    
+    # Layout com câmera e input
+    col1, col2, col3 = st.columns([2, 1, 2])
+    
+    with col1:
+        st.subheader("📷 Ler Código de Barras")
+        
+        # Camera input para scanner
+        camera_photo = st.camera_input(
+            "Clique para tirar foto do código de barras",
+            key="camera_cadastro"
+        )
+        
+        if camera_photo:
+            st.warning("📸 Cameraca não processa imagens diretamente. Use um scanner Bluetooth ou digite o código.")
+    
+    with col2:
+        st.subheader("🔢 Inserir EAN")
+        codigo_manual = st.text_input(
+            "EAN",
+            key="input_ean_manual",
+            placeholder="Digite o EAN",
+            label_visibility="collapsed"
+        )
+        
+        if codigo_manual and codigo_manual != st.session_state["ultimo_codigo_buscado"]:
+            realizar_busca(codigo_manual)
+    
+    with col3:
+        st.subheader("📋 Scanner Bluetooth")
+        st.write("Selecione ou digite:")
+        
+        # Selectbox com produtos recentes (opcional)
+        try:
+            resultado_recentes = st.session_state["db"].table("produtos").select(
+                "barcode", "nome"
+            ).eq("empresa_id", int(st.session_state["empresa_id"])).limit(10).execute()
+            
+            if resultado_recentes.data:
+                opcoes = [""] + [f"{r['barcode']} - {r['nome']}" for r in resultado_recentes.data]
+                selecao = st.selectbox(
+                    "Produto recente",
+                    opcoes,
+                    key="select_recente",
+                    label_visibility="collapsed"
+                )
+                
+                if selecao:
+                    ean_selecionado = selecao.split(" - ")[0]
+                    if ean_selecionado != st.session_state["ultimo_codigo_buscado"]:
+                        realizar_busca(ean_selecionado)
+        except Exception:
+            pass
+    
+    # Divider
+    st.divider()
+    
+    # Formulário de cadastro
     with st.form("cadastro_produto_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
         
@@ -56,8 +270,11 @@ def show_cadastro():
                 "🔍 Código de Barras (EAN)",
                 value=st.session_state["codigo_barras"],
                 key="input_codigo_barras",
-                placeholder="Digite ou bip o código"
+                placeholder="Digite ou bip o código",
+                on_change=realizar_busca,
+                args=(st.session_state["input_codigo_barras"],)
             )
+            
             nome = st.text_input(
                 "📝 Nome do Produto",
                 value=st.session_state["nome"],
@@ -135,119 +352,14 @@ def show_cadastro():
             st.session_state[chave] = campos_iniciais[chave]
         st.session_state["ultimo_codigo_buscado"] = ""
         st.session_state["produto_existe"] = False
+        st.session_state["codigo_bipado"] = ""
         st.rerun()
-    
-    # Busca automática de EAN
-    if codigo_barras and codigo_barras != st.session_state["ultimo_codigo_buscado"]:
-        st.session_state["ultimo_codigo_buscado"] = codigo_barras
-        st.session_state["produto_existe"] = False
-        
-        # Busca no Supabase
-        produto_encontrado = None
-        try:
-            # Tenta em barcode primeiro
-            result = st.session_state["db"].table("produtos").select("*").eq("empresa_id", int(st.session_state["empresa_id"])).eq("barcode", codigo_barras).execute()
-            if result.data:
-                produto_encontrado = result.data[0]
-        except Exception:
-            pass
-        
-        # Se não achou, tenta em codigo_barras
-        if not produto_encontrado:
-            try:
-                result = st.session_state["db"].table("produtos").select("*").eq("empresa_id", int(st.session_state["empresa_id"])).eq("codigo_barras", codigo_barras).execute()
-                if result.data:
-                    produto_encontrado = result.data[0]
-            except Exception:
-                pass
-        
-        # Se ainda não achou, tenta em codigo
-        if not produto_encontrado:
-            try:
-                result = st.session_state["db"].table("produtos").select("*").eq("empresa_id", int(st.session_state["empresa_id"])).eq("codigo", codigo_barras).execute()
-                if result.data:
-                    produto_encontrado = result.data[0]
-            except Exception:
-                pass
-        
-        # Se achou no banco, popula os campos
-        if produto_encontrado:
-            st.session_state["produto_existe"] = True
-            st.session_state["nome"] = produto_encontrado.get("nome", "")
-            st.session_state["categoria"] = produto_encontrado.get("categoria", "Alimentos")
-            st.session_state["unidade"] = produto_encontrado.get("unidade", "un")
-            st.session_state["quantidade_inicial"] = float(produto_encontrado.get("quantidade", 0))
-            st.session_state["estoque_minimo"] = float(produto_encontrado.get("quantidade_minima", 0))
-            st.session_state["preco_custo"] = float(produto_encontrado.get("preco_custo", 0))
-            
-            data_valid = produto_encontrado.get("data_validade")
-            if data_valid:
-                try:
-                    if isinstance(data_valid, str):
-                        st.session_state["data_validade"] = datetime.strptime(data_valid, "%Y-%m-%d").date()
-                    else:
-                        st.session_state["data_validade"] = data_valid
-                except Exception:
-                    st.session_state["data_validade"] = None
-            else:
-                st.session_state["data_validade"] = None
-            
-            # Leitura reversa da localização
-            local_raw = produto_encontrado.get("localizacao", "")
-            fornecedor_val = ""
-            lote_val = ""
-            obs_val = ""
-            
-            if "[F:" in local_raw and "|L:" in local_raw and "|O:]" in local_raw:
-                try:
-                    local_limpo = local_raw.split("[F:")[0].strip()
-                    resto = local_raw.split("[F:")[1].rsplit("]", 1)[0]
-                    
-                    parts = resto.split("|")
-                    for part in parts:
-                        if part.startswith("F:"):
-                            fornecedor_val = part[2:]
-                        elif part.startswith("L:"):
-                            lote_val = part[2:]
-                        elif part.startswith("O:"):
-                            obs_val = part[2:]
-                    
-                    st.session_state["localizacao"] = local_limpo
-                    st.session_state["fornecedor"] = fornecedor_val
-                    st.session_state["numero_lote"] = lote_val
-                    st.session_state["observacoes"] = obs_val
-                except Exception:
-                    st.session_state["localizacao"] = local_raw
-            else:
-                st.session_state["localizacao"] = local_raw
-            
-            st.info(f"✅ Produto encontrado! Editando: {st.session_state['nome']}")
-        
-        else:
-            # Busca no OpenFoodFacts
-            try:
-                url = f"https://world.openfoodfacts.org/api/v0/product/{codigo_barras}.json"
-                response = requests.get(url, timeout=5)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("status") == 1 and data.get("product"):
-                        product = data["product"]
-                        if product.get("product_name"):
-                            st.session_state["nome"] = product["product_name"]
-                        if product.get("categories"):
-                            cats = product["categories"].split(",")[0].strip()
-                            for cat_padrao in CATEGORIAS:
-                                if cat_padrao.lower() in cats.lower():
-                                    st.session_state["categoria"] = cat_padrao
-                                    break
-            except Exception:
-                pass
     
     # Ação de salvar
     if submitted:
         if not nome.strip():
             st.error("❌ O nome do produto é obrigatório.")
-            return
+            st.rerun()
         
         # Compactação da localização
         localizacao_compactada = localizacao.strip()
@@ -288,7 +400,9 @@ def show_cadastro():
         try:
             if st.session_state["produto_existe"] and codigo_barras:
                 # Atualizar produto existente
-                st.session_state["db"].table("produtos").update(payload).eq("empresa_id", int(st.session_state["empresa_id"])).eq("barcode", codigo_barras).execute()
+                st.session_state["db"].table("produtos").update(payload).eq(
+                    "empresa_id", int(st.session_state["empresa_id"])
+                ).eq("barcode", codigo_barras).execute()
                 st.success("✅ Produto atualizado com sucesso!")
             else:
                 # Inserir novo produto
@@ -300,6 +414,7 @@ def show_cadastro():
                 st.session_state[chave] = campos_iniciais[chave]
             st.session_state["ultimo_codigo_buscado"] = ""
             st.session_state["produto_existe"] = False
+            st.session_state["codigo_bipado"] = ""
             st.rerun()
             
         except Exception as e:
