@@ -1,140 +1,214 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import requests
-from datetime import datetime
-import pytz
+import time
+from datetime import date
 
-_TZ = pytz.timezone("America/Sao_Paulo")
+# =========================
+# Inicialização do estado
+# =========================
+def init_state():
+    defaults = {
+        "cad_barcode": "",
+        "cad_nome": "",
+        "cad_categoria": "Outros",
+        "cad_ultimo_codigo": ""
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-CATEGORIAS = ["Alimentos", "Bebidas", "Limpeza", "Higiene", "Medicamentos", "Outros"]
-UNIDADES = ["un", "kg", "g", "L", "ml", "cx", "fardo", "pct", "dz"]
-
-def _buscar_produto_apis(barcode: str) -> dict:
-    """Busca inteligente em tempo real usando APIs públicas."""
-    if not barcode or len(barcode) < 8:
-        return {}
+# =========================
+# Busca OpenFoodFacts
+# =========================
+def buscar_openfoodfacts(codigo):
     try:
-        url_off = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json"
-        res = requests.get(url_off, timeout=4)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("status") == 1:
-                p = data.get("product", {})
-                return {
-                    "nome": p.get("product_name", "").upper(),
-                    "categoria": "Alimentos",
-                    "unidade": "un"
-                }
+        url = f"https://world.openfoodfacts.org/api/v0/product/{codigo}.json"
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if data.get("status") != 1:
+            return None
+        produto = data.get("product", {})
+        return {
+            "nome": produto.get("product_name", ""),
+            "categoria": produto.get("categories", "")
+        }
     except Exception:
-        pass
-    return {}
+        return None
 
-def show_cadastro():
-    st.markdown("### 1️⃣ Escanear ou Digitar Código")
+# =========================
+# Busca Supabase defensiva
+# =========================
+def buscar_produto_supabase(db, empresa_id, codigo):
+    # tentativa 1 -> barcode
+    try:
+        resp = db.table("produtos").select("*").eq("empresa_id", int(empresa_id)).eq("barcode", codigo).limit(1).execute()
+        if resp.data: return resp.data[0]
+    except Exception: pass
 
-    supabase = st.session_state.get("db")
-    empresa_id = st.session_state.get("empresa_id", 1)
+    # tentativa 2 -> codigo_barras
+    try:
+        resp = db.table("produtos").select("*").eq("empresa_id", int(empresa_id)).eq("codigo_barras", codigo).limit(1).execute()
+        if resp.data: return resp.data[0]
+    except Exception: pass
 
-    if not supabase:
-        st.error("❌ Conexão com o banco de dados não encontrada no sistema.")
+    # tentativa 3 -> codigo
+    try:
+        resp = db.table("produtos").select("*").eq("empresa_id", int(empresa_id)).eq("codigo", codigo).limit(1).execute()
+        if resp.data: return resp.data[0]
+    except Exception: pass
+
+    return None
+
+# =========================
+# Processa busca
+# =========================
+def processar_busca(db, empresa_id, codigo):
+    if not codigo:
         return
 
-    if "cadastro_nome" not in st.session_state: 
-        st.session_state["cadastro_nome"] = ""
-    if "cadastro_cat" not in st.session_state: 
-        st.session_state["cadastro_cat"] = "Alimentos"
+    codigo = codigo.strip()
+    st.session_state.cad_ultimo_codigo = codigo
 
-    # Bloco de Busca por Código de Barras
-    with st.container():
-        c_busca, c_btn = st.columns([3, 1])
-        with c_busca:
-            barcode_input = st.text_input("Código de Barras", placeholder="789...", key="barcode_scan")
-        with c_btn:
-            st.markdown("<div style='padding-top:24px;'></div>", unsafe_allow_html=True)
-            if st.button("🔍 Buscar", use_container_width=True):
-                if barcode_input.strip():
-                    with st.spinner("Consultando bases..."):
-                        info = _buscar_produto_apis(barcode_input.strip())
-                        if info:
-                            st.session_state["cadastro_nome"] = info.get("nome", "")
-                            st.session_state["cadastro_cat"] = info.get("categoria", "Alimentos")
-                            st.success("✅ Código processado. Insira as informações manuais abaixo.")
-                        else:
-                            st.warning("⚠️ Produto não localizado nas bases automatizadas. Insira os dados manualmente.")
-                else:
-                    st.error("Informe um código de barras válido.")
+    # 1 -> banco local
+    produto = buscar_produto_supabase(db, empresa_id, codigo)
+    if produto:
+        st.session_state.cad_nome = produto.get("nome", "") or ""
+        st.session_state.cad_categoria = produto.get("categoria", "Outros") or "Outros"
+        st.success("✅ Produto localizado no banco.")
+        return
 
-    st.markdown("<br>### 2️⃣ Informações de Cadastro", unsafe_allow_html=True)
+    # 2 -> internet
+    api = buscar_openfoodfacts(codigo)
+    if api:
+        if api.get("nome"):
+            st.session_state.cad_nome = api["nome"]
 
-    # Formulário Principal de Cadastro
-    with st.form("form_cadastro_produtos", clear_on_submit=True):
+        categoria_api = api.get("categoria", "").lower()
+        categoria_final = "Outros"
+
+        if "drink" in categoria_api or "bebida" in categoria_api:
+            categoria_final = "Bebidas"
+        elif "food" in categoria_api or "alimento" in categoria_api:
+            categoria_final = "Alimentos"
+
+        st.session_state.cad_categoria = categoria_final
+        st.info("🌐 Produto encontrado na internet.")
+    else:
+        st.warning("Produto não encontrado. Continue preenchendo manualmente.")
+
+# =========================
+# Tela principal
+# =========================
+def show_cadastro():
+    init_state()
+
+    db = st.session_state.get("db")
+    empresa_id = st.session_state.get("empresa_id")
+
+    if db is None:
+        st.error("❌ Banco não conectado.")
+        return
+
+    if not empresa_id:
+        st.error("❌ Empresa não identificada.")
+        return
+
+    st.markdown("## ➕ Cadastro de Produto")
+
+    # =========================
+    # Busca EAN
+    # =========================
+    col_busca1, col_busca2 = st.columns([4, 1])
+
+    with col_busca1:
+        codigo = st.text_input("Código de Barras (EAN)", key="cad_barcode")
+
+    with col_busca2:
+        st.write("")
+        buscar_manual = st.button("🔎 Buscar", use_container_width=True)
+
+    # Ação de busca centralizada para evitar loops de renderização
+    if buscar_manual and codigo.strip():
+        processar_busca(db, empresa_id, codigo)
+
+    # =========================
+    # Formulário
+    # =========================
+    with st.form("form_cadastro", clear_on_submit=False):
         col1, col2 = st.columns(2)
+
         with col1:
-            nome = st.text_input("Nome do Produto *", value=st.session_state["cadastro_nome"])
+            nome = st.text_input("Nome do Produto *", value=st.session_state.cad_nome)
             
-            idx_cat = 0
-            if st.session_state["cadastro_cat"] in CATEGORIAS:
-                idx_cat = CATEGORIAS.index(st.session_state["cadastro_cat"])
-            categoria = st.selectbox("Categoria *", CATEGORIAS, index=idx_cat)
-            
-            onde_comprou = st.text_input("Fornecedor / Marca", placeholder="Ex: ROBERTA / DOM PEDRO")
-            lote = st.text_input("Número do Lote (Opcional)", placeholder="Ex: 02:41")
-            quantidade_minima = st.number_input("Estoque Mínimo de Alerta", min_value=0.0, step=1.0, value=0.0)
+            categorias_lista = ["Alimentos", "Bebidas", "Limpeza", "Higiene", "Medicamentos", "Outros"]
+            try:
+                idx_cat = categorias_lista.index(st.session_state.cad_categoria)
+            except ValueError:
+                idx_cat = 5 # Padrão: Outros
+
+            categoria = st.selectbox("Categoria", categorias_lista, index=idx_cat)
+            unidade = st.selectbox("Unidade", ["un", "kg", "g", "L", "ml", "cx", "fardo", "pct", "dz"])
+            quantidade = st.number_input("Quantidade Inicial", min_value=0.0, value=0.0, step=1.0)
+            qtd_min = st.number_input("Estoque Mínimo", min_value=0.0, value=0.0, step=1.0)
 
         with col2:
-            quantidade = st.number_input("Quantidade em Estoque *", min_value=0.0, step=1.0, value=1.0)
-            unidade = st.selectbox("Unidade de Medida", UNIDADES, index=0)
-            data_validade = st.date_input("Data de Validade *", value=datetime.now(_TZ).date())
-            preco_custo = st.number_input("Preço de Custo (R$)", min_value=0.0, step=0.01, format="%.2f")
-            localizacao = st.text_input("Localização física no Almoxarifado", placeholder="Ex: ARMÁRIO DE ALIMENTOS / DESPENSA")
+            preco = st.number_input("Preço de Custo (R$)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
+            validade = st.date_input("Data de Validade", value=date.today())
+            localizacao = st.text_input("Localização Física")
+            fornecedor = st.text_input("Fornecedor / Onde foi comprado")
+            lote = st.text_input("Número do Lote")
 
-        observacoes = st.text_area("Observações Gerais", placeholder="Ex: PRODUTO OBTIDO ATRAVÉS DE DOAÇÃO DE CESTA BÁSICA")
+        observacoes = st.text_area("Observações")
+        salvar = st.form_submit_button("💾 Salvar Produto", type="primary", use_container_width=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        btn_salvar = st.form_submit_button("💾 Confirmar e Registrar no Supabase", type="primary", use_container_width=True)
+        # =========================
+        # SALVAR PROCESSAMENTO
+        # =========================
+        if salvar:
+            nome_final = nome.strip().upper() if nome else ""
 
-    if btn_salvar:
-        if not nome.strip():
-            st.error("❌ O campo 'Nome do Produto' é obrigatório.")
-            return
+            if not nome_final:
+                st.error("❌ Nome do produto é obrigatório.")
+            else:
+                extras = []
+                if fornecedor.strip():
+                    extras.append(f"Fornecedor: {fornecedor.strip().upper()}")
+                if lote.strip():
+                    extras.append(f"Lote: {lote.strip()}")
+                if observacoes.strip():
+                    extras.append(f"Obs: {observacoes.strip().upper()}")
 
-        # ENGENHARIA REVERSA DE TEXTO:
-        # Juntamos as variáveis adicionais dentro do campo localizacao que já existe no banco.
-        # Ficará visível assim no seu produtos.py: "ARMÁRIO DE ALIMENTOS [Fornecedor: ROBERTA | Lote: 02:41] Obs: DOAÇÃO"
-        info_localizacao = localizacao.strip() if localizacao.strip() else "Almoxarifado"
-        detalhes_extras = []
-        
-        if onde_comprou.strip(): detalhes_extras.append(f"Fornecedor: {onde_comprou.strip().upper()}")
-        if lote.strip(): detalhes_extras.append(f"Lote: {lote.strip()}")
-        if observacoes.strip(): detalhes_extras.append(f"Obs: {observacoes.strip().upper()}")
-        
-        if detalhes_extras:
-            string_final_localizacao = f"{info_localizacao} [{' | '.join(detalhes_extras)}]"
-        else:
-            string_final_localizacao = info_localizacao
+                local_final = localizacao.strip()
+                if extras:
+                    local_final = f"{local_final} [{' | '.join(extras)}]" if local_final else f"[{' | '.join(extras)}]"
 
-        # Payload montado estritamente com as colunas que seu produtos.py usa e aprova
-        payload = {
-            "empresa_id": int(empresa_id),
-            "barcode": barcode_input.strip() if barcode_input.strip() else None,
-            "nome": nome.strip().upper(),
-            "categoria": categoria,
-            "quantidade": float(quantidade),
-            "unidade": unidade,
-            "quantidade_minima": float(quantidade_minima),
-            "preco_custo": float(preco_custo),
-            "data_validade": str(data_validade),
-            "localizacao": string_final_localizacao  # Salvando tudo aqui sem quebrar o schema cache
-        }
+                payload = {
+                    "empresa_id": int(empresa_id),
+                    "barcode": codigo.strip() if codigo.strip() else None,
+                    "nome": nome_final,
+                    "categoria": categoria,
+                    "quantidade": float(quantidade),
+                    "unidade": unidade,
+                    "quantidade_minima": float(qtd_min),
+                    "preco_custo": float(preco),
+                    "data_validade": validade.strftime("%Y-%m-%d"),
+                    "localizacao": local_final if local_final else "Almoxarifado"
+                }
 
-        try:
-            with st.spinner("Gravando dados no SmartLarder Pro..."):
-                supabase.table("produtos").insert(payload).execute()
-                st.success(f"🎉 Produto '{nome.strip().upper()}' cadastrado com sucesso!")
-                
-                # Reseta o formulário
-                st.session_state["cadastro_nome"] = ""
-                st.session_state["cadastro_cat"] = "Alimentos"
-                st.rerun()
-        except Exception as error:
-            st.error(f"❌ Erro de persistência no Supabase. Motivo técnico: {error}")
+                try:
+                    db.table("produtos").insert(payload).execute()
+                    st.success("🎉 Produto salvo com sucesso!")
+                    time.sleep(1)
+                    
+                    # Reset amigável de estado sem quebrar os widgets
+                    st.session_state.cad_barcode = ""
+                    st.session_state.cad_nome = ""
+                    st.session_state.cad_categoria = "Outros"
+                    st.session_state.cad_ultimo_codigo = ""
+                    
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Falha ao salvar no Supabase: {e}")
