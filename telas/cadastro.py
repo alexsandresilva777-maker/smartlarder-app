@@ -71,7 +71,6 @@ def buscar_openfoodfacts(codigo):
 # =========================================================
 def buscar_produto(db, empresa_id, codigo):
     try:
-        # Corrigido com base no log: sua coluna real se chama 'barcode'
         res = db.table("produtos").select("*").eq("empresa_id", int(empresa_id)).eq("barcode", str(codigo).strip()).execute()
         if res and hasattr(res, 'data') and res.data:
             return dict(res.data[0])
@@ -88,52 +87,50 @@ def processar_busca(db, empresa_id, codigo):
         return
 
     st.session_state.ultimo_codigo_buscado = codigo
+
+    res_banco = buscar_produto(db, empresa_id, codigo)
+
+    if res_banco:
+        st.session_state.produto_existente = True
+        st.session_state.produto_id = res_banco.get("id")
+
+        st.session_state.cad_nome = str(res_banco.get("nome", "")).upper()
+        st.session_state.cad_categoria = str(res_banco.get("categoria", "Outros"))
+        st.session_state.cad_quantidade = int(res_banco.get("quantidade", 0))
+        st.session_state.cad_unidade = str(res_banco.get("unidade", "un"))
+        st.session_state.cad_qtd_min = int(res_banco.get("quantidade_minima", 0))
+        st.session_state.cad_preco = float(res_banco.get("preco_custo", 0) or 0.0)
+        st.session_state.cad_localizacao = str(res_banco.get("localizacao", ""))
+        st.session_state.cad_fornecedor = ""
+        st.session_state.cad_lote = ""
+        st.session_state.cad_obs = ""
+
+        if res_banco.get("data_validade"):
+            try:
+                st.session_state.cad_validade = date.fromisoformat(res_banco["data_validade"])
+            except Exception:
+                st.session_state.cad_validade = date.today()
+
+        st.success(f"✅ Produto encontrado no estoque: {st.session_state.cad_nome}")
+        st.session_state.form_id_cadastro += 1
+        st.rerun()
+        return
+
+    # Se não achou no banco, tenta na Internet
+    api = buscar_openfoodfacts(codigo)
+    if api:
+        st.session_state.cad_nome = str(api.get("nome", "")).upper()
+        st.session_state.cad_categoria = str(api.get("categoria", "Outros"))
+        st.info("🌐 Produto localizado na Internet!")
+    else:
+        st.session_state.cad_nome = ""
+        st.session_state.cad_categoria = "Outros"
+        st.warning("⚠️ Produto não cadastrado no estoque nem na internet.")
+
     st.session_state.produto_existente = False
     st.session_state.produto_id = None
-
-    with st.spinner("Buscando produto..."):
-        res_banco = buscar_produto(db, empresa_id, codigo)
-
-        if res_banco:
-            st.session_state.produto_existente = True
-            st.session_state.produto_id = res_banco.get("id")
-
-            # Mapeamento direto dos campos do seu banco mapeados no Schema Visualizer
-            st.session_state.cad_nome = str(res_banco.get("nome", "")).upper()
-            st.session_state.cad_categoria = str(res_banco.get("categoria", "Outros"))
-            st.session_state.cad_quantidade = int(res_banco.get("quantidade", 0))
-            st.session_state.cad_unidade = str(res_banco.get("unidade", "un"))
-            st.session_state.cad_qtd_min = int(res_banco.get("quantidade_minima", 0))
-            st.session_state.cad_preco = float(res_banco.get("preco_custo", 0) or 0.0)
-            st.session_state.cad_localizacao = str(res_banco.get("localizacao", ""))
-            
-            # Limpa os campos extras para evitar duplicação visual
-            st.session_state.cad_fornecedor = ""
-            st.session_state.cad_lote = ""
-            st.session_state.cad_obs = ""
-
-            if res_banco.get("data_validade"):
-                try:
-                    st.session_state.cad_validade = date.fromisoformat(res_banco["data_validade"])
-                except Exception:
-                    st.session_state.cad_validade = date.today()
-
-            st.success(f"✅ Produto encontrado no estoque: {st.session_state.cad_nome}")
-            st.session_state.form_id_cadastro += 1
-            return
-
-        # Busca alternativa na Internet
-        api = buscar_openfoodfacts(codigo)
-        if api:
-            st.session_state.cad_nome = str(api.get("nome", "")).upper()
-            st.session_state.cad_categoria = str(api.get("categoria", "Outros"))
-            st.info("🌐 Produto localizado na base de dados da Internet.")
-            st.session_state.form_id_cadastro += 1
-        else:
-            # Reseta os campos para digitação limpa se não achou em lugar nenhum
-            st.session_state.cad_nome = ""
-            st.session_state.cad_categoria = "Outros"
-            st.warning("⚠️ Produto não cadastrado. Preencha os dados abaixo para salvar.")
+    st.session_state.form_id_cadastro += 1
+    st.rerun()
 
 # =========================================================
 # RENDERIZAÇÃO DA TELA
@@ -154,21 +151,17 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    # Campo de digitação associado ao state para não perder o valor
+    # Forçamos o código digitado a atualizar o state imediatamente
     codigo = st.text_input("Código de Barras (EAN)", value=st.session_state.ultimo_codigo_buscado, key="cad_barcode_input_final")
     
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        buscar = st.button("🔎 Buscar Produto", type="secondary", use_container_width=True)
-    with col2:
-        if st.session_state.produto_existente:
-            st.info(f"🔗 Editando produto existente (ID no banco: {st.session_state.produto_id})")
-
-    if (buscar or (codigo and codigo.strip() != st.session_state.ultimo_codigo_buscado)) and codigo.strip():
+    # Se o código na caixinha mudou em relação à última busca, ele dispara o processador sozinho
+    if codigo.strip() and codigo.strip() != st.session_state.ultimo_codigo_buscado:
         processar_busca(db, empresa_id, codigo)
-        st.rerun()
 
-    # Formulário dinâmico acoplado ao ID mutável
+    if st.session_state.produto_existente:
+        st.info(f"🔗 Editando produto existente (ID no banco: {st.session_state.produto_id})")
+
+    # Formulário renderiza os dados injetados pelo processar_busca
     with st.form(key=f"form_main_cadastro_{st.session_state.form_id_cadastro}", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
@@ -189,13 +182,10 @@ def show_cadastro():
         with c2:
             preco = st.number_input("Preço de Custo por Unidade (R$)", min_value=0.0, step=0.01, format="%.2f", value=st.session_state.cad_preco)
             validade = st.date_input("Data de Validade", value=st.session_state.cad_validade)
-            
-            # Mantemos a localização pura limitada a 100 caracteres conforme o banco manda
             localizacao = st.text_input("Localização / Armário", value=st.session_state.cad_localizacao, max_chars=100)
             fornecedor = st.text_input("Fornecedor / Loja (Opcional)", value=st.session_state.cad_fornecedor)
             lote = st.text_input("Número do Lote (Opcional)", value=st.session_state.cad_lote)
 
-        # Notas extras
         obs_usuario = st.text_area("Observações", value=st.session_state.cad_obs)
 
         texto_botao = "🔄 Atualizar Produto Existente" if st.session_state.produto_existente else "💾 Salvar Novo Produto"
@@ -205,8 +195,6 @@ def show_cadastro():
             nome_final = nome.strip().upper()
 
             if nome_final:
-                # CORREÇÃO CRÍTICA: Se o usuário preencher Fornecedor ou Lote, anexamos isso nas OBSERVAÇÕES 
-                # para nunca mais estourar o limite de 100 caracteres da coluna localização do banco de dados!
                 notas_finais = []
                 if fornecedor.strip():
                     notas_finais.append(f"Fornecedor: {fornecedor.strip().upper()}")
@@ -227,7 +215,7 @@ def show_cadastro():
                     "quantidade_minima": int(qtd_min),
                     "preco_custo": float(preco),
                     "data_validade": validade.strftime("%Y-%m-%d"),
-                    "localizacao": localizacao.strip()[:100]  # Força o corte de segurança para 100 chars
+                    "localizacao": localizacao.strip()[:100]
                 }
 
                 try:
@@ -240,7 +228,7 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Reset completo do estado para a próxima inserção
+                    # Reset total pós-salvamento
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
                     st.session_state.cad_unidade = "un"
@@ -261,6 +249,5 @@ def show_cadastro():
 
                 except Exception as e:
                     st.error(f"❌ Erro de persistência no Supabase: {e}")
-                    st.info("💡 Dica: Verifique se as políticas de RLS do seu banco permitem escrita para o seu perfil.")
             else:
                 st.error("❌ O nome do produto é obrigatório.")
