@@ -31,7 +31,7 @@ def init_state():
             st.session_state[k] = v
 
 # =========================================================
-# OPEN FOOD FACTS (COM CAPTURA DE MARCA)
+# OPEN FOOD FACTS (MARCA INTEGRADA AO NOME)
 # =========================================================
 def buscar_openfoodfacts(codigo):
     try:
@@ -44,13 +44,11 @@ def buscar_openfoodfacts(codigo):
             return None
         p = data.get("product", {})
         
-        # Captura nome e marca
         nome_base = p.get("product_name", "").strip()
         marca = p.get("brands", "").strip()
         
-        # Junta Marca + Nome de forma elegante se a marca existir
+        # Junta Marca + Nome no mesmo texto para respeitar seu banco
         if marca and nome_base:
-            # Evita duplicar se o nome já começar com a marca
             if nome_base.lower().startswith(marca.lower()):
                 nome_completo = nome_base
             else:
@@ -71,7 +69,7 @@ def buscar_openfoodfacts(codigo):
         return None
 
 # =========================================================
-# EXTRAIR F/L/O
+# EXTRAIR F/L/O DA LOCALIZAÇÃO
 # =========================================================
 def parse_localizacao(txt):
     if not txt:
@@ -98,7 +96,7 @@ def parse_localizacao(txt):
     return local, fornecedor, lote, obs
 
 # =========================================================
-# BUSCA DEFENSIVA NO SUPABASE
+# BUSCA RETORNANDO APENAS COLUNAS REAIS
 # =========================================================
 def buscar_produto(db, empresa_id, codigo):
     colunas = ["barcode", "codigo_barras", "codigo"]
@@ -112,10 +110,12 @@ def buscar_produto(db, empresa_id, codigo):
     return None
 
 # =========================================================
-# PROCESSAMENTO CONTROLADO DA BUSCA
+# PROCESSAR BUSCA
 # =========================================================
 def processar_busca(db, empresa_id, codigo):
     codigo = str(codigo).strip()
+    if not code: # Fallback de segurança para a string
+        codigo = str(st.session_state.cad_barcode).strip()
     if not codigo:
         return
 
@@ -124,7 +124,6 @@ def processar_busca(db, empresa_id, codigo):
     with st.spinner("Buscando dados do produto..."):
         produto = buscar_produto(db, empresa_id, codigo)
 
-        # Se encontrou no banco local
         if produto:
             st.session_state.produto_existente = True
             st.session_state.produto_id = produto.get("id")
@@ -151,21 +150,20 @@ def processar_busca(db, empresa_id, codigo):
             st.success("✅ Produto localizado no banco de dados!")
             return
 
-        # Se não encontrou local, busca na API da Internet
         api = buscar_openfoodfacts(codigo)
         if api:
             if api.get("nome"):
                 st.session_state.cad_nome = api["nome"].upper()
             st.session_state.cad_categoria = api.get("categoria", "Outros")
-            st.info("🌐 Produto localizado na internet (Marca + Nome integrados).")
+            st.info("🌐 Produto localizado na internet.")
         else:
-            st.warning("⚠️ Produto não encontrado. Preencha as informações manualmente.")
+            st.warning("⚠️ Produto não cadastrado. Continue manualmente.")
 
         st.session_state.produto_existente = False
         st.session_state.produto_id = None
 
 # =========================================================
-# FILTRO E COMPACTAÇÃO DA LOCALIZAÇÃO (LIMITE STRETO DE 100 CARACTERES)
+# COMPACTAR E CORRAR STRINGS (MÁXIMO 100 CARACTERES)
 # =========================================================
 def montar_localizacao(local, fornecedor, lote, obs):
     local = str(local).strip()
@@ -182,11 +180,10 @@ def montar_localizacao(local, fornecedor, lote, obs):
     else:
         final = local
 
-    # Truncamento rígido para impedir o erro 22001 do Supabase
     return final.strip()[:100]
 
 # =========================================================
-# INTERFACE PRINCIPAL (TELA)
+# RENDERIZAÇÃO DA TELA
 # =========================================================
 def show_cadastro():
     init_state()
@@ -199,12 +196,11 @@ def show_cadastro():
         return
 
     if not empresa_id:
-        st.error("❌ Empresa identificada de forma inválida.")
+        st.error("❌ Empresa inválida ou não identificada.")
         return
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    # Bloco superior de busca por código de barras
     col1, col2 = st.columns([4, 1])
     with col1:
         codigo = st.text_input("Código de Barras (EAN)", key="cad_barcode")
@@ -212,13 +208,11 @@ def show_cadastro():
         st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
         buscar = st.button("🔎 Buscar", use_container_width=True)
 
-    # Dispara a ação se o botão for clicado ou se um novo código válido for inserido
     if (buscar or (codigo and codigo != st.session_state.ultimo_codigo_buscado)) and codigo.strip():
         processar_busca(db, empresa_id, codigo)
         st.rerun()
 
-    # Formulário principal
-    with st.form("cadastro_form", clear_on_submit=False):
+    with st.form("form_cadastro_final", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
         with c1:
@@ -239,12 +233,11 @@ def show_cadastro():
             preco = st.number_input("Preço de Custo por Unidade (R$)", min_value=0.0, step=0.01, format="%.2f", value=st.session_state.cad_preco)
             validade = st.date_input("Data de Validade", value=st.session_state.cad_validade)
             localizacao = st.text_input("Localização / Armário", value=st.session_state.cad_localizacao)
-            fornecedor = st.text_input("Onde foi comprado (Fornecedor/Loja)", value=st.session_state.cad_fornecedor)
+            fornecedor = st.text_input("Fornecedor / Loja", value=st.session_state.cad_fornecedor)
             lote = st.text_input("Número do Lote", value=st.session_state.cad_lote)
 
         obs = st.text_area("Observações", value=st.session_state.cad_obs)
 
-        # Define dinamicamente o comportamento do botão
         texto_botao = "🔄 Atualizar Produto" if st.session_state.produto_existente else "💾 Salvar Produto"
         salvar = st.form_submit_button(texto_botao, type="primary", use_container_width=True)
 
@@ -252,17 +245,16 @@ def show_cadastro():
             nome_final = nome.strip().upper()
 
             if nome_final:
-                # Modela a string limitando estritamente a 100 caracteres
                 local_final = montar_localizacao(localizacao, fornecedor, lote, obs)
 
-                # Montagem correta utilizando o nome corrigido da variável: unidade
+                # MAPA COMPATÍVEL 100% COM SEU SCHEMA REAL DO SUPABASE
                 payload = {
                     "empresa_id": int(empresa_id),
                     "barcode": codigo.strip() if codigo.strip() else None,
                     "nome": nome_final,
                     "categoria": categoria,
                     "quantidade": float(qtd),
-                    "unidade": unidade, 
+                    "unidade": unidade,
                     "quantidade_minima": float(qtd_min),
                     "preco_custo": float(preco),
                     "data_validade": validade.strftime("%Y-%m-%d"),
@@ -272,33 +264,15 @@ def show_cadastro():
                 try:
                     if st.session_state.produto_existente:
                         db.table("produtos").update(payload).eq("id", st.session_state.produto_id).execute()
-                        st.success("🎉 Produto atualizado com sucesso no SmartLarder Pro!")
+                        st.success("🎉 Produto atualizado com sucesso!")
                     else:
                         db.table("produtos").insert(payload).execute()
                         st.success("🎉 Novo produto cadastrado com sucesso!")
 
                     time.sleep(1)
 
-                    # Reset completo e limpo do estado
+                    # Reset Completo do State
                     st.session_state.cad_barcode = ""
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
-                    st.session_state.cad_unidade = "un"
-                    st.session_state.cad_quantidade = 0.0
-                    st.session_state.cad_qtd_min = 0.0
-                    st.session_state.cad_preco = 0.0
-                    st.session_state.cad_validade = date.today()
-                    st.session_state.cad_localizacao = ""
-                    st.session_state.cad_fornecedor = ""
-                    st.session_state.cad_lote = ""
-                    st.session_state.cad_obs = ""
-                    st.session_state.ultimo_codigo_buscado = ""
-                    st.session_state.produto_id = None
-                    st.session_state.produto_existente = False
-
-                    st.rerun()
-
-                except Exception as e:
-                    st.error(f"❌ Erro ao persistir dados no Supabase: {e}")
-            else:
-                st.error("❌ O preenchimento do campo 'Nome do Produto' é obrigatório.")
+                    st.session_state.cad_unidade = "un
