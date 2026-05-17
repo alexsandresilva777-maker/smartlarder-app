@@ -11,13 +11,13 @@ UNIDADES = ["un", "kg", "g", "L", "ml", "cx", "fardo", "pct", "dz"]
 
 def _buscar_produto_apis(barcode: str) -> dict:
     """
-    Busca inteligente em tempo real usando duas APIs públicas.
+    Busca inteligente em tempo real usando APIs públicas.
     Zero dados fixos no código.
     """
     if not barcode or len(barcode) < 8:
         return {}
 
-    # 1ª Tentativa: Open Food Facts (Foco global e alimentos)
+    # 1ª Tentativa: Open Food Facts
     try:
         url_off = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json"
         res = requests.get(url_off, timeout=4)
@@ -33,15 +33,19 @@ def _buscar_produto_apis(barcode: str) -> dict:
     except Exception:
         pass
 
-    # 2ª Tentativa: BrasilAPI (Foco em produtos do mercado nacional/comercial)
+    # 2ª Tentativa: Fallback de API Pública
     try:
-        url_br = f"https://brasilapi.com.br/api/isbn/v1/{barcode}"  # Nota: Adaptável para CNPJ/Produtos se aplicável, ou fallback estável
-        # Usando a BrasilAPI de produtos comerciais públicos se disponível, ou tratando retorno limpo
-        url_cnp = f"https://api.vtex.com/..." # Exemplo de rota, mantendo o fallback padrão da BrasilAPI estável:
-        url_produtos = f"https://brasilapi.com.br/api/ee/v1/{barcode}" 
-        
-        # Como fallback nacional simplificado e direto para balancear o OpenFoodFacts:
-        res = requests.get(f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json", timeout=4) # Fallback seguro
+        url_br = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json"
+        res = requests.get(url_br, timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("status") == 1:
+                p = data.get("product", {})
+                return {
+                    "nome": p.get("product_name", ""),
+                    "categoria": "Alimentos",
+                    "unidade": "un"
+                }
     except Exception:
         pass
 
@@ -50,18 +54,17 @@ def _buscar_produto_apis(barcode: str) -> dict:
 def show_cadastro():
     st.markdown("## ➕ Cadastrar Novo Produto")
 
-    # Recupera a conexão do Supabase e dados da sessão direto do app.py
     supabase = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
-    user_id = st.session_state.get("user_id")
 
     if not supabase:
         st.error("❌ Conexão com o banco de dados não encontrada no sistema.")
         return
 
-    # Inicializa chaves no session_state para controlar o autopreenchimento dinâmico
-    if "cadastro_nome" not in st.session_state: st.session_state["cadastro_nome"] = ""
-    if "cadastro_cat" not in st.session_state: st.session_state["cadastro_cat"] = "Alimentos"
+    if "cadastro_nome" not in st.session_state: 
+        st.session_state["cadastro_nome"] = ""
+    if "cadastro_cat" not in st.session_state: 
+        st.session_state["cadastro_cat"] = "Alimentos"
 
     # Bloco de Busca por Código de Barras
     with st.container():
@@ -79,7 +82,7 @@ def show_cadastro():
                             st.session_state["cadastro_cat"] = info.get("categoria", "Alimentos")
                             st.success("✅ Dados localizados com sucesso!")
                         else:
-                            st.warning("⚠️ Produto não encontrado nas bases públicas. Digite os dados manualmente abaixo.")
+                            st.warning("⚠️ Produto não encontrado. Digite os dados manualmente abaixo.")
                 else:
                     st.error("Informe um código de barras válido.")
 
@@ -93,7 +96,6 @@ def show_cadastro():
         with col1:
             nome = st.text_input("Nome do Produto *", value=st.session_state["cadastro_nome"])
             
-            # Garante que o index da categoria capturada seja o correto
             idx_cat = 0
             if st.session_state["cadastro_cat"] in CATEGORIAS:
                 idx_cat = CATEGORIAS.index(st.session_state["cadastro_cat"])
@@ -116,20 +118,19 @@ def show_cadastro():
         st.markdown("<br>", unsafe_allow_html=True)
         btn_salvar = st.form_submit_button("💾 Finalizar Cadastro do Produto", type="primary", use_container_width=True)
 
-   if btn_salvar:
+    if btn_salvar:
         if not nome.strip():
             st.error("❌ O campo 'Nome do Produto' é obrigatório.")
             return
 
-        # Montagem do payload com as colunas exatas validadas pelo seu produtos.py
         payload = {
             "empresa_id": int(empresa_id),
             "barcode": barcode_input.strip() if barcode_input.strip() else None,
             "nome": nome.strip(),
             "categoria": categoria,
             "quantidade": float(quantidade),
-            "unidade": unidade,  # Correção aqui: era 'unidad'
-            "quantidade_minima": float(quantidade_minima),  # Coluna oficial do seu produtos.py
+            "unidade": unidade,
+            "quantidade_minima": float(quantidade_minima),
             "preco_custo": float(preco_custo) if preco_custo > 0 else 0.0,
             "data_validade": str(data_validade),
             "localizacao": localizacao.strip() if localizacao.strip() else None
@@ -137,17 +138,11 @@ def show_cadastro():
 
         try:
             with st.spinner("Gravando dados no SmartLarder Pro..."):
-                # Forçamos o envio limpando qualquer resquício de cache do formulário
                 supabase.table("produtos").insert(payload).execute()
-                
                 st.success(f"🎉 Produto '{nome}' cadastrado com sucesso!")
                 
-                # Reseta os campos de busca para o próximo produto
                 st.session_state["cadastro_nome"] = ""
                 st.session_state["cadastro_cat"] = "Alimentos"
-                
-                # Um pequeno delay e rerun limpo para resetar a tela
                 st.rerun()
-                
         except Exception as error:
             st.error(f"❌ Erro de persistência no Supabase. Detalhes técnicos: {error}")
