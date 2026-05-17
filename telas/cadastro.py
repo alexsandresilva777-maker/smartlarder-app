@@ -88,49 +88,48 @@ def processar_busca(db, empresa_id, codigo):
 
     st.session_state.ultimo_codigo_buscado = codigo
 
-    res_banco = buscar_produto(db, empresa_id, codigo)
+    with st.spinner("Buscando produto..."):
+        res_banco = buscar_produto(db, empresa_id, codigo)
 
-    if res_banco:
-        st.session_state.produto_existente = True
-        st.session_state.produto_id = res_banco.get("id")
+        if res_banco:
+            st.session_state.produto_existente = True
+            st.session_state.produto_id = res_banco.get("id")
 
-        st.session_state.cad_nome = str(res_banco.get("nome", "")).upper()
-        st.session_state.cad_categoria = str(res_banco.get("categoria", "Outros"))
-        st.session_state.cad_quantidade = int(res_banco.get("quantidade", 0))
-        st.session_state.cad_unidade = str(res_banco.get("unidade", "un"))
-        st.session_state.cad_qtd_min = int(res_banco.get("quantidade_minima", 0))
-        st.session_state.cad_preco = float(res_banco.get("preco_custo", 0) or 0.0)
-        st.session_state.cad_localizacao = str(res_banco.get("localizacao", ""))
-        st.session_state.cad_fornecedor = ""
-        st.session_state.cad_lote = ""
-        st.session_state.cad_obs = ""
+            st.session_state.cad_nome = str(res_banco.get("nome", "")).upper()
+            st.session_state.cad_categoria = str(res_banco.get("categoria", "Outros"))
+            st.session_state.cad_quantidade = int(res_banco.get("quantidade", 0))
+            st.session_state.cad_unidade = str(res_banco.get("unidade", "un"))
+            st.session_state.cad_qtd_min = int(res_banco.get("quantidade_minima", 0))
+            st.session_state.cad_preco = float(res_banco.get("preco_custo", 0) or 0.0)
+            st.session_state.cad_localizacao = str(res_banco.get("localizacao", ""))
+            st.session_state.cad_fornecedor = ""
+            st.session_state.cad_lote = ""
+            st.session_state.cad_obs = ""
 
-        if res_banco.get("data_validade"):
-            try:
-                st.session_state.cad_validade = date.fromisoformat(res_banco["data_validade"])
-            except Exception:
-                st.session_state.cad_validade = date.today()
+            if res_banco.get("data_validade"):
+                try:
+                    st.session_state.cad_validade = date.fromisoformat(res_banco["data_validade"])
+                except Exception:
+                    st.session_state.cad_validade = date.today()
 
-        st.success(f"✅ Produto encontrado no estoque: {st.session_state.cad_nome}")
+            st.success(f"✅ Produto encontrado no estoque: {st.session_state.cad_nome}")
+            st.session_state.form_id_cadastro += 1
+            return
+
+        # Busca na Internet
+        api = buscar_openfoodfacts(codigo)
+        if api:
+            st.session_state.cad_nome = str(api.get("nome", "")).upper()
+            st.session_state.cad_categoria = str(api.get("categoria", "Outros"))
+            st.info("🌐 Produto localizado na Internet!")
+        else:
+            st.session_state.cad_nome = ""
+            st.session_state.cad_categoria = "Outros"
+            st.warning("⚠️ Produto não cadastrado.")
+
+        st.session_state.produto_existente = False
+        st.session_state.produto_id = None
         st.session_state.form_id_cadastro += 1
-        st.rerun()
-        return
-
-    # Se não achou no banco, tenta na Internet
-    api = buscar_openfoodfacts(codigo)
-    if api:
-        st.session_state.cad_nome = str(api.get("nome", "")).upper()
-        st.session_state.cad_categoria = str(api.get("categoria", "Outros"))
-        st.info("🌐 Produto localizado na Internet!")
-    else:
-        st.session_state.cad_nome = ""
-        st.session_state.cad_categoria = "Outros"
-        st.warning("⚠️ Produto não cadastrado no estoque nem na internet.")
-
-    st.session_state.produto_existente = False
-    st.session_state.produto_id = None
-    st.session_state.form_id_cadastro += 1
-    st.rerun()
 
 # =========================================================
 # RENDERIZAÇÃO DA TELA
@@ -151,17 +150,23 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    # Forçamos o código digitado a atualizar o state imediatamente
-    codigo = st.text_input("Código de Barras (EAN)", value=st.session_state.ultimo_codigo_buscado, key="cad_barcode_input_final")
-    
-    # Se o código na caixinha mudou em relação à última busca, ele dispara o processador sozinho
-    if codigo.strip() and codigo.strip() != st.session_state.ultimo_codigo_buscado:
+    # O BOTÃO VOLTOU: Alinhamento perfeito em colunas fora do Form
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        codigo = st.text_input("Código de Barras (EAN)", value=st.session_state.ultimo_codigo_buscado, key="cad_barcode_field_final")
+    with col2:
+        st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
+        buscar = st.button("🔎 Buscar", use_container_width=True, type="secondary")
+
+    # Dispara apenas quando o botão "Buscar" for explicitamente clicado
+    if buscar and codigo.strip():
         processar_busca(db, empresa_id, codigo)
+        st.rerun()
 
     if st.session_state.produto_existente:
         st.info(f"🔗 Editando produto existente (ID no banco: {st.session_state.produto_id})")
 
-    # Formulário renderiza os dados injetados pelo processar_busca
+    # Formulário renderiza os dados de forma estável
     with st.form(key=f"form_main_cadastro_{st.session_state.form_id_cadastro}", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
@@ -221,14 +226,14 @@ def show_cadastro():
                 try:
                     if st.session_state.produto_existente:
                         db.table("produtos").update(payload).eq("id", st.session_state.produto_id).execute()
-                        st.success("🎉 Produto atualizado com sucesso!")
+                        st.success("🎉 Produto updated com sucesso!")
                     else:
                         db.table("produtos").insert(payload).execute()
                         st.success("🎉 Novo produto cadastrado com sucesso!")
 
                     time.sleep(1)
 
-                    # Reset total pós-salvamento
+                    # Reset limpo pós-salvamento
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
                     st.session_state.cad_unidade = "un"
