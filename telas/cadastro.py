@@ -10,7 +10,6 @@ from datetime import date
 # =========================================================
 def init_state():
     defaults = {
-        "cad_barcode": "",
         "cad_nome": "",
         "cad_categoria": "Outros",
         "cad_unidade": "un",
@@ -198,13 +197,9 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    # PAINEL DIAGNÓSTICO (Exclusivo para identificar o gargalo do RLS)
-    with st.expander("🔍 Painel de Diagnóstico de Segurança (Envio)", expanded=False):
-        st.write(f"**Empresa ID ativa na sessão:** `{empresa_id}` (Tipo: {type(empresa_id).__name__})")
-        st.write(f"**Status da Conexão Supabase:** Conectado")
-
     col1, col2 = st.columns([4, 1])
     with col1:
+        # O widget gerencia seu próprio estado através da chave interna
         codigo = st.text_input("Código de Barras (EAN)", key="cad_barcode")
     with col2:
         st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
@@ -255,7 +250,7 @@ def show_cadastro():
                     "nome": nome_final,
                     "categoria": categoria,
                     "quantidade": int(qtd),
-                    "unidade": unidade,
+                    "unidade": unity if 'unity' in locals() else unidade,
                     "quantidade_minima": int(qtd_min),
                     "preco_custo": float(preco),
                     "data_validade": validade.strftime("%Y-%m-%d"),
@@ -272,27 +267,23 @@ def show_cadastro():
 
                     time.sleep(1)
 
-                    # Reset Completo do State
-                    st.session_state.cad_barcode = ""
-                    st.session_state.cad_nome = ""
-                    st.session_state.cad_categoria = "Outros"
-                    st.session_state.cad_unidade = "un"
-                    st.session_state.cad_quantidade = 0
-                    st.session_state.cad_qtd_min = 0
-                    st.session_state.cad_preco = 0.0
-                    st.session_state.cad_validade = date.today()
-                    st.session_state.cad_localizacao = ""
-                    st.session_state.cad_fornecedor = ""
-                    st.session_state.cad_lote = ""
-                    st.session_state.cad_obs = ""
-                    st.session_state.ultimo_codigo_buscado = ""
+                    # Limpeza segura de chaves que NÃO estão amarradas a widgets via key direto no form
+                     chaves_para_resetar = [
+                        "cad_nome", "cad_categoria", "cad_unidade", "cad_quantidade", 
+                        "cad_qtd_min", "cad_preco", "cad_localizacao", "cad_fornecedor", 
+                        "cad_lote", "cad_obs", "ultimo_codigo_buscado"
+                    ]
+                    for k in chaves_para_resetar:
+                        if k in st.session_state:
+                            del st.session_state[k]
+                    
                     st.session_state.produto_id = None
                     st.session_state.produto_existente = False
 
+                    # O rerun recarrega o app limpando naturalmente os inputs controlados
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"❌ Erro ao persistir dados no Supabase: {e}")
-                    st.info(f"Dados rejeitados pelo RLS para conferência: {payload}")
             else:
                 st.error("❌ O nome do produto é obrigatório.")
