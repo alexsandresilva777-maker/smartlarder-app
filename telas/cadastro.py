@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 telas/cadastro.py — SmartLarder Pro
-Versão de Emergência: Remoção de colunas inexistentes (criado_por / codigo) para destravar o Supabase.
+Mapeamento Adaptativo de Colunas Essenciais (Estoque Mínimo, Preço e Fornecedor).
 """
 import streamlit as st
 import requests
@@ -20,15 +20,11 @@ def _init_state():
     if _K_CAM_ON not in st.session_state: st.session_state[_K_CAM_ON] = False
 
 def _consultar_banco_mundial_ean(codigo: str) -> dict:
-    """
-    Busca robusta com dicionário local para itens tradicionais brasileiros.
-    Garante o funcionamento perfeito mesmo sem APIs externas ativas.
-    """
     codigo = "".join(filter(str.isdigit, codigo.strip()))
     if not codigo:
         return {}
 
-    # --- DICIONÁRIO DE PRODUTOS CORINGA (Garante eficiência total nos seus testes) ---
+    # Dicionário local para eficiência máxima nos testes
     PRODUTOS_LOCAIS = {
         "7891000100103": {"nome": "REFRIGERANTE COCA-COLA LATA 350ML", "categoria": "Bebidas", "fornecedor": "COCA-COLA BRASIL"},
         "7891000055106": {"nome": "REFRIGERANTE COCA-COLA LATA 350ML", "categoria": "Bebidas", "fornecedor": "COCA-COLA BRASIL"},
@@ -40,7 +36,6 @@ def _consultar_banco_mundial_ean(codigo: str) -> dict:
     if codigo in PRODUTOS_LOCAIS:
         return PRODUTOS_LOCAIS[codigo]
 
-    # Fallback para o Open Food Facts para outros produtos
     try:
         url_off = f"https://world.openfoodfacts.org/api/v0/product/{codigo}.json"
         r = requests.get(url_off, timeout=4)
@@ -68,7 +63,6 @@ def _consultar_banco_mundial_ean(codigo: str) -> dict:
                     }
     except Exception:
         pass
-
     return {}
 
 def _disparar_busca(codigo: str):
@@ -118,15 +112,13 @@ def show_cadastro():
 
     if status_busca == "encontrado":
         st.success(f"⚡ **Autopreenchimento Ativo:** Produto **'{res_atual.get('nome')}'** localizado!")
-    elif status_busca == "nao_encontrado":
-        st.info("ℹ️ Código processado. Preencha as informações manuais abaixo.")
 
     st.markdown("---")
     st.markdown("### 2️⃣ Informações de Cadastro")
 
     val_nome  = res_atual.get("nome", "")
     val_cat   = res_atual.get("categoria", "Alimentos")
-    val_marca = res_atual.get("fornecedor", "PADRÃO / GERAL")
+    val_marca = res_atual.get("fornecedor", "")
 
     idx_cat = CATEGORIAS.index(val_cat) if val_cat in CATEGORIAS else 0
 
@@ -135,18 +127,18 @@ def show_cadastro():
         with c1:
             prod_nome = st.text_input("Nome do Produto *", value=val_nome)
             prod_cat  = st.selectbox("Categoria *", CATEGORIAS, index=idx_cat)
-            prod_fab  = st.text_input("Fornecedor / Marca", value=val_marca)
+            prod_fab  = st.text_input("Fornecedor / Local de Aquisição *", value=val_marca, placeholder="Ex: Supermercado BH, Distribuidor X")
             prod_lote = st.text_input("Número do Lote (Opcional)")
             
         with c2:
             prod_qtd  = st.number_input("Quantidade em Estoque *", min_value=0.0, step=1.0, value=1.0, format="%.2f")
             prod_un   = st.selectbox("Unidade de Medida", UNIDADES, index=0)
             prod_val  = st.date_input("Data de Validade *", value=date.today())
-            prod_cost = st.number_input("Preço de Custo (R$)", min_value=0.0, step=0.01, format="%.2f")
+            prod_cost = st.number_input("Preço de Custo (R$) *", min_value=0.0, step=0.01, format="%.2f")
 
         c3, c4 = st.columns(2)
         with c3:
-            prod_min = st.number_input("Estoque Mínimo de Alerta", min_value=0.0, step=1.0, value=0.0, format="%.1f")
+            prod_min = st.number_input("Estoque Mínimo de Alerta *", min_value=0.0, step=1.0, value=0.0, format="%.1f")
         with c4:
             prod_loc = st.text_input("Localização física no Almoxarifado", value="DISPENSA")
 
@@ -158,38 +150,69 @@ def show_cadastro():
     if btn_salvar:
         if not prod_nome.strip():
             st.error("❌ O nome do produto precisa estar preenchido!")
+        elif not prod_fab.strip():
+            st.error("❌ O Fornecedor / Local de aquisição é essencial para a rastreabilidade!")
         else:
             if not db:
                 st.error("❌ Banco de dados local inacessível.")
                 return
 
-            # Limpamos as colunas inexistentes (criado_por, codigo, ean, codigo_barras) 
-            # enviando apenas os campos reais e obrigatórios da tabela
-            payload = {
+            # Dicionário base com os dados comuns
+            payload_base = {
                 "nome":            prod_nome.strip().upper(),
                 "categoria":       prod_cat,
                 "quantidade":      float(prod_qtd),
                 "unidade":         prod_un,
                 "validade":        str(prod_val),
                 "lote":            prod_lote.strip() or None,
-                "fornecedor":      prod_fab.strip() or "PADRÃO / GERAL",
                 "localizacao":     prod_loc.strip() or "DISPENSA",
-                "preco_custo":     float(prod_cost),
-                "estoque_minimo":  float(prod_min),
                 "observacoes":     prod_obs.strip() or None,
                 "empresa_id":      int(empresa_id),
                 "user_id":         int(user_id)
             }
 
-            try:
-                # Executa o insert com os campos limpos e validados
-                res = db.table("produtos").insert(payload).execute()
-                if res.data:
-                    st.success("🎉 Produto registrado com sucesso no Supabase!")
-                    st.balloons()
-                    st.session_state[_K_CODIGO] = ""
-                    st.session_state[_K_RESULTADO] = {}
-                    st.rerun()
-                    return
-            except Exception as e:
-                st.error(f"❌ Erro crítico de persistência. Detalhes: {str(e)}")
+            # ── ESTRATÉGIA DE SALVAMENTO EM CASCATA ADAPTATIVA ──
+            # Lista de tentativas mapeando variações de nomes de colunas
+            tentativas_colunas = [
+                {"estoque_min": float(prod_min), "preco_custo": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
+                {"estoque_minimo": float(prod_min), "preco": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
+                {"est_minimo": float(prod_min), "preco_custo": float(prod_cost), "local_aquisicao": prod_fab.strip().upper()},
+                {"alerta_minimo": float(prod_min), "preco": float(prod_cost), "marca": prod_fab.strip().upper()},
+            ]
+
+            ultimo_erro_tecnico = ""
+            
+            for mapeamento in tentativas_colunas:
+                try:
+                    payload_teste = {**payload_base, **mapeamento}
+                    
+                    # Inclui dinamicamente variações comuns de códigos de barras se houver um código lido
+                    if st.session_state[_K_CODIGO]:
+                        payload_teste["codigo_barras"] = st.session_state[_K_CODIGO]
+
+                    res = db.table("produtos").insert(payload_teste).execute()
+                    if res.data:
+                        st.success("🎉 Produto registrado com sucesso! Toda a inteligência de Estoque Mínimo e Valores foi preservada.")
+                        st.balloons()
+                        st.session_state[_K_CODIGO] = ""
+                        st.session_state[_K_RESULTADO] = {}
+                        st.rerun()
+                        return
+                except Exception as e:
+                    ultimo_erro_tecnico = str(e)
+                    # Se falhar por causa do código de barras, tenta sem ele no payload antes de mudar de mapeamento
+                    try:
+                        payload_teste_sem_ean = {**payload_base, **mapeamento}
+                        res = db.table("produtos").insert(payload_teste_sem_ean).execute()
+                        if res.data:
+                            st.success("🎉 Produto registrado com sucesso! Dados analíticos salvos.")
+                            st.balloons()
+                            st.session_state[_K_CODIGO] = ""
+                            st.session_state[_K_RESULTADO] = {}
+                            st.rerun()
+                            return
+                    except Exception as e2:
+                        ultimo_erro_tecnico = str(e2)
+                        continue
+            
+            st.error(f"❌ Erro de correspondência de colunas no Supabase. Detalhes: {ultimo_erro_tecnico}")
