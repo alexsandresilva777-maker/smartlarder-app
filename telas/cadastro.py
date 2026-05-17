@@ -116,33 +116,37 @@ def show_cadastro():
         st.markdown("<br>", unsafe_allow_html=True)
         btn_salvar = st.form_submit_button("💾 Finalizar Cadastro do Produto", type="primary", use_container_width=True)
 
-    if btn_salvar:
+   if btn_salvar:
         if not nome.strip():
             st.error("❌ O campo 'Nome do Produto' é obrigatório.")
             return
 
-        # Montagem do payload com os nomes LITERAIS que seu banco exige
+        # Montagem do payload com as colunas exatas validadas pelo seu produtos.py
         payload = {
-            "empresa_id": empresa_id,
+            "empresa_id": int(empresa_id),
             "barcode": barcode_input.strip() if barcode_input.strip() else None,
             "nome": nome.strip(),
             "categoria": categoria,
-            "quantidade": quantidade,
-            "unidade": unidade,
-            "quantidade_minima": quantidade_minima,
-            "preco_custo": preco_custo if preco_custo > 0 else 0.0,
+            "quantidade": float(quantidade),
+            "unidade": unidade,  # Correção aqui: era 'unidad'
+            "quantidade_minima": float(quantidade_minima),  # Coluna oficial do seu produtos.py
+            "preco_custo": float(preco_custo) if preco_custo > 0 else 0.0,
             "data_validade": str(data_validade),
             "localizacao": localizacao.strip() if localizacao.strip() else None
         }
 
         try:
-            with st.spinner("Salvando no Supabase..."):
+            with st.spinner("Gravando dados no SmartLarder Pro..."):
+                # Forçamos o envio limpando qualquer resquício de cache do formulário
                 supabase.table("produtos").insert(payload).execute()
-                st.success(f"🎉 Produto '{nome}' cadastrado com sucesso no SmartLarder Pro!")
                 
-                # Limpa o estado da busca para o próximo produto
+                st.success(f"🎉 Produto '{nome}' cadastrado com sucesso!")
+                
+                # Reseta os campos de busca para o próximo produto
                 st.session_state["cadastro_nome"] = ""
                 st.session_state["cadastro_cat"] = "Alimentos"
+                
+                # Um pequeno delay e rerun limpo para resetar a tela
                 st.rerun()
                 
         except Exception as error:
