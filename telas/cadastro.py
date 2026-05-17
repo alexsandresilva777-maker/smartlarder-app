@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 telas/cadastro.py — SmartLarder Pro
-Mapeamento Adaptativo de Colunas Essenciais (Estoque Mínimo, Preço e Fornecedor).
+Mapeamento Adaptativo Dinâmico para Preservação da Lógica de Estoque Mínimo e Custos.
 """
 import streamlit as st
 import requests
@@ -24,7 +24,7 @@ def _consultar_banco_mundial_ean(codigo: str) -> dict:
     if not codigo:
         return {}
 
-    # Dicionário local para eficiência máxima nos testes
+    # Dicionário de Contingência Local para eficiência máxima
     PRODUTOS_LOCAIS = {
         "7891000100103": {"nome": "REFRIGERANTE COCA-COLA LATA 350ML", "categoria": "Bebidas", "fornecedor": "COCA-COLA BRASIL"},
         "7891000055106": {"nome": "REFRIGERANTE COCA-COLA LATA 350ML", "categoria": "Bebidas", "fornecedor": "COCA-COLA BRASIL"},
@@ -81,6 +81,7 @@ def show_cadastro():
     db         = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     user_id    = st.session_state.get("user_id", 1)
+    username   = st.session_state.get("username", "")
 
     st.markdown("## ➕ Cadastrar Produto por EAN")
     st.markdown("---")
@@ -151,13 +152,13 @@ def show_cadastro():
         if not prod_nome.strip():
             st.error("❌ O nome do produto precisa estar preenchido!")
         elif not prod_fab.strip():
-            st.error("❌ O Fornecedor / Local de aquisição é essencial para a rastreabilidade!")
+            st.error("❌ O Fornecedor / Local de aquisição é essencial!")
         else:
             if not db:
                 st.error("❌ Banco de dados local inacessível.")
                 return
 
-            # Dicionário base com os dados comuns
+            # Dados base incontestáveis
             payload_base = {
                 "nome":            prod_nome.strip().upper(),
                 "categoria":       prod_cat,
@@ -171,48 +172,43 @@ def show_cadastro():
                 "user_id":         int(user_id)
             }
 
-            # ── ESTRATÉGIA DE SALVAMENTO EM CASCATA ADAPTATIVA ──
-            # Lista de tentativas mapeando variações de nomes de colunas
-            tentativas_colunas = [
+            # ── MATRIZ DE MAPEAMENTO ADAPTATIVO ──
+            # Testa combinações comuns de nomes para as colunas estruturais
+            variacoes_colunas = [
                 {"estoque_min": float(prod_min), "preco_custo": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
                 {"estoque_minimo": float(prod_min), "preco": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
+                {"estoque_min": float(prod_min), "preco": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
                 {"est_minimo": float(prod_min), "preco_custo": float(prod_cost), "local_aquisicao": prod_fab.strip().upper()},
-                {"alerta_minimo": float(prod_min), "preco": float(prod_cost), "marca": prod_fab.strip().upper()},
             ]
 
-            ultimo_erro_tecnico = ""
-            
-            for mapeamento in tentativas_colunas:
+            ultimo_erro = ""
+            for mapeamento in variacoes_colunas:
                 try:
                     payload_teste = {**payload_base, **mapeamento}
                     
-                    # Inclui dinamicamente variações comuns de códigos de barras se houver um código lido
+                    # Inclui tentativas opcionais para o campo de metadados do criador
+                    if username:
+                        payload_teste["criado_por"] = str(username)
+
+                    # Tenta incluir o código lido nas chaves de barras conhecidas
                     if st.session_state[_K_CODIGO]:
-                        payload_teste["codigo_barras"] = st.session_state[_K_CODIGO]
+                        payload_teste["codigo"] = st.session_state[_K_CODIGO]
 
                     res = db.table("produtos").insert(payload_teste).execute()
                     if res.data:
-                        st.success("🎉 Produto registrado com sucesso! Toda a inteligência de Estoque Mínimo e Valores foi preservada.")
+                        st.success("🎉 Sensacional, Alex! Produto registrado mantendo toda a lógica do aplicativo intacta!")
                         st.balloons()
                         st.session_state[_K_CODIGO] = ""
                         st.session_state[_K_RESULTADO] = {}
                         st.rerun()
                         return
                 except Exception as e:
-                    ultimo_erro_tecnico = str(e)
-                    # Se falhar por causa do código de barras, tenta sem ele no payload antes de mudar de mapeamento
+                    ultimo_erro = str(e)
+                    
+                    # Segunda tentativa interna removendo chaves voláteis (como codigo/criado_por)
+                    # mas preservando rigorosamente Estoque Mínimo, Preço e Origem
                     try:
-                        payload_teste_sem_ean = {**payload_base, **mapeamento}
-                        res = db.table("produtos").insert(payload_teste_sem_ean).execute()
+                        payload_estrito = {**payload_base, **mapeamento}
+                        res = db.table("produtos").insert(payload_estrito).execute()
                         if res.data:
-                            st.success("🎉 Produto registrado com sucesso! Dados analíticos salvos.")
-                            st.balloons()
-                            st.session_state[_K_CODIGO] = ""
-                            st.session_state[_K_RESULTADO] = {}
-                            st.rerun()
-                            return
-                    except Exception as e2:
-                        ultimo_erro_tecnico = str(e2)
-                        continue
-            
-            st.error(f"❌ Erro de correspondência de colunas no Supabase. Detalhes: {ultimo_erro_tecnico}")
+                            st.success("🎉 Produto registrado com sucesso! Inteligência de Estoque Mínimo e Valores preservada
