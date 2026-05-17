@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 telas/cadastro.py — SmartLarder Pro
-Mapeamento Adaptativo Dinâmico para Preservação da Lógica de Estoque Mínimo e Custos.
+Versão Analítica: Garante estoque mínimo, preço e fornecedor sem erros de sintaxe.
 """
 import streamlit as st
 import requests
@@ -24,7 +24,7 @@ def _consultar_banco_mundial_ean(codigo: str) -> dict:
     if not codigo:
         return {}
 
-    # Dicionário de Contingência Local para eficiência máxima
+    # Dicionário de Contingência Local para eficiência nos testes
     PRODUTOS_LOCAIS = {
         "7891000100103": {"nome": "REFRIGERANTE COCA-COLA LATA 350ML", "categoria": "Bebidas", "fornecedor": "COCA-COLA BRASIL"},
         "7891000055106": {"nome": "REFRIGERANTE COCA-COLA LATA 350ML", "categoria": "Bebidas", "fornecedor": "COCA-COLA BRASIL"},
@@ -81,7 +81,6 @@ def show_cadastro():
     db         = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     user_id    = st.session_state.get("user_id", 1)
-    username   = st.session_state.get("username", "")
 
     st.markdown("## ➕ Cadastrar Produto por EAN")
     st.markdown("---")
@@ -128,7 +127,7 @@ def show_cadastro():
         with c1:
             prod_nome = st.text_input("Nome do Produto *", value=val_nome)
             prod_cat  = st.selectbox("Categoria *", CATEGORIAS, index=idx_cat)
-            prod_fab  = st.text_input("Fornecedor / Local de Aquisição *", value=val_marca, placeholder="Ex: Supermercado BH, Distribuidor X")
+            prod_fab  = st.text_input("Fornecedor / Local de Aquisição *", value=val_marca)
             prod_lote = st.text_input("Número do Lote (Opcional)")
             
         with c2:
@@ -152,63 +151,58 @@ def show_cadastro():
         if not prod_nome.strip():
             st.error("❌ O nome do produto precisa estar preenchido!")
         elif not prod_fab.strip():
-            st.error("❌ O Fornecedor / Local de aquisição é essencial!")
+            st.error("❌ O Fornecedor / Local de aquisição é obrigatório!")
         else:
             if not db:
                 st.error("❌ Banco de dados local inacessível.")
                 return
 
-            # Dados base incontestáveis
-            payload_base = {
-                "nome":            prod_nome.strip().upper(),
-                "categoria":       prod_cat,
-                "quantidade":      float(prod_qtd),
-                "unidade":         prod_un,
-                "validade":        str(prod_val),
-                "lote":            prod_lote.strip() or None,
-                "localizacao":     prod_loc.strip() or "DISPENSA",
-                "observacoes":     prod_obs.strip() or None,
-                "empresa_id":      int(empresa_id),
-                "user_id":         int(user_id)
+            # Montagem estruturada do Payload base (Dados idênticos aos das imagens)
+            payload = {
+                "nome":          prod_nome.strip().upper(),
+                "categoria":     prod_cat,
+                "quantidade":    float(prod_qtd),
+                "unidade":       prod_un,
+                "validade":      str(prod_val),
+                "lote":          prod_lote.strip() or None,
+                "fornecedor":    prod_fab.strip().upper(),
+                "localizacao":   prod_loc.strip() or "DISPENSA",
+                "observacoes":   prod_obs.strip() or None,
+                "empresa_id":    int(empresa_id),
+                "user_id":       int(user_id)
             }
 
-            # ── MATRIZ DE MAPEAMENTO ADAPTATIVO ──
-            # Testa combinações comuns de nomes para as colunas estruturais
-            variacoes_colunas = [
-                {"estoque_min": float(prod_min), "preco_custo": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
-                {"estoque_minimo": float(prod_min), "preco": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
-                {"estoque_min": float(prod_min), "preco": float(prod_cost), "fornecedor": prod_fab.strip().upper()},
-                {"est_minimo": float(prod_min), "preco_custo": float(prod_cost), "local_aquisicao": prod_fab.strip().upper()},
-            ]
+            # TENTATIVA 1: Enviando com a nomenclatura clássica 'estoque_minimo' e 'preco_custo'
+            try:
+                p1 = payload.copy()
+                p1["estoque_minimo"] = float(prod_min)
+                p1["preco_custo"] = float(prod_cost)
+                
+                res = db.table("produtos").insert(p1).execute()
+                if res.data:
+                    st.success("🎉 Produto cadastrado com sucesso!")
+                    st.balloons()
+                    st.session_state[_K_CODIGO] = ""
+                    st.session_state[_K_RESULTADO] = {}
+                    st.rerun()
+                    return
+            except Exception:
+                pass
 
-            ultimo_erro = ""
-            for mapeamento in variacoes_colunas:
-                try:
-                    payload_teste = {**payload_base, **mapeamento}
-                    
-                    # Inclui tentativas opcionais para o campo de metadados do criador
-                    if username:
-                        payload_teste["criado_por"] = str(username)
-
-                    # Tenta incluir o código lido nas chaves de barras conhecidas
-                    if st.session_state[_K_CODIGO]:
-                        payload_teste["codigo"] = st.session_state[_K_CODIGO]
-
-                    res = db.table("produtos").insert(payload_teste).execute()
-                    if res.data:
-                        st.success("🎉 Sensacional, Alex! Produto registrado mantendo toda a lógica do aplicativo intacta!")
-                        st.balloons()
-                        st.session_state[_K_CODIGO] = ""
-                        st.session_state[_K_RESULTADO] = {}
-                        st.rerun()
-                        return
-                except Exception as e:
-                    ultimo_erro = str(e)
-                    
-                    # Segunda tentativa interna removendo chaves voláteis (como codigo/criado_por)
-                    # mas preservando rigorosamente Estoque Mínimo, Preço e Origem
-                    try:
-                        payload_estrito = {**payload_base, **mapeamento}
-                        res = db.table("produtos").insert(payload_estrito).execute()
-                        if res.data:
-                            st.success("🎉 Produto registrado com sucesso! Inteligência de Estoque Mínimo e Valores preservada
+            # TENTATIVA 2: Enviando com a nomenclatura abreviada 'estoque_min' e 'preco'
+            try:
+                p2 = payload.copy()
+                p2["estoque_min"] = float(prod_min)
+                p2["preco"] = float(prod_cost)
+                
+                res = db.table("produtos").insert(p2).execute()
+                if res.data:
+                    st.success("🎉 Produto cadastrado com sucesso!")
+                    st.balloons()
+                    st.session_state[_K_CODIGO] = ""
+                    st.session_state[_K_RESULTADO] = {}
+                    st.rerun()
+                    return
+            except Exception as e:
+                # Se ambas falharem, reporta o erro limpo da segunda tentativa para sabermos o nome exato
+                st.error(f"❌ Erro de persistência no Supabase. Detalhes técnicos: {str(e)}")
