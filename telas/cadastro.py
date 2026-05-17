@@ -5,9 +5,13 @@ import streamlit as st
 from datetime import date
 
 # =========================================================
-# SESSION STATE
+# SESSION STATE - CONTROLADO POR CHAVES DIRETAS
 # =========================================================
 def init_state():
+    # Inicializa o valor do input diretamente no State para o Streamlit não perder a digitação
+    if "cad_barcode_field_final" not in st.session_state:
+        st.session_state["cad_barcode_field_final"] = ""
+
     defaults = {
         "cad_nome": "",
         "cad_categoria": "Outros",
@@ -20,7 +24,6 @@ def init_state():
         "cad_fornecedor": "",
         "cad_lote": "",
         "cad_obs": "",
-        "ultimo_codigo_buscado": "",
         "produto_id": None,
         "produto_existente": False,
         "form_id_cadastro": 0, 
@@ -67,7 +70,7 @@ def buscar_openfoodfacts(codigo):
         return None
 
 # =========================================================
-# BUSCA EXCLUSIVA NA COLUNA REAL (barcode)
+# BUSCA NA COLUNA REAL (barcode)
 # =========================================================
 def buscar_produto(db, empresa_id, codigo):
     try:
@@ -84,11 +87,10 @@ def buscar_produto(db, empresa_id, codigo):
 def processar_busca(db, empresa_id, codigo):
     codigo = str(codigo).strip()
     if not codigo:
+        st.warning("⚠️ Digite um código de barras antes de buscar.")
         return
 
-    st.session_state.ultimo_codigo_buscado = codigo
-
-    with st.spinner("Buscando produto..."):
+    with st.spinner("Consultando base de dados..."):
         res_banco = buscar_produto(db, empresa_id, codigo)
 
         if res_banco:
@@ -114,22 +116,24 @@ def processar_busca(db, empresa_id, codigo):
 
             st.success(f"✅ Produto encontrado no estoque: {st.session_state.cad_nome}")
             st.session_state.form_id_cadastro += 1
+            st.rerun()
             return
 
-        # Busca na Internet
+        # Se não achou no banco, vai para a internet
         api = buscar_openfoodfacts(codigo)
         if api:
             st.session_state.cad_nome = str(api.get("nome", "")).upper()
             st.session_state.cad_categoria = str(api.get("categoria", "Outros"))
-            st.info("🌐 Produto localizado na Internet!")
+            st.info("🌐 Produto localizado na Internet! Preencha o restante dos dados.")
         else:
             st.session_state.cad_nome = ""
             st.session_state.cad_categoria = "Outros"
-            st.warning("⚠️ Produto não cadastrado.")
+            st.warning("⚠️ Produto não localizado. Preencha os campos manualmente para cadastrar.")
 
         st.session_state.produto_existente = False
         st.session_state.produto_id = None
         st.session_state.form_id_cadastro += 1
+        st.rerun()
 
 # =========================================================
 # RENDERIZAÇÃO DA TELA
@@ -150,23 +154,24 @@ def show_cadastro():
 
     st.markdown("## ➕ Cadastro de Produto")
 
-    # O BOTÃO VOLTOU: Alinhamento perfeito em colunas fora do Form
+    # Amarrando o valor digitado diretamente à memória global do Streamlit via key
     col1, col2 = st.columns([4, 1])
     with col1:
-        codigo = st.text_input("Código de Barras (EAN)", value=st.session_state.ultimo_codigo_buscado, key="cad_barcode_field_final")
+        st.text_input("Código de Barras (EAN)", key="cad_barcode_field_final")
     with col2:
         st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
         buscar = st.button("🔎 Buscar", use_container_width=True, type="secondary")
 
-    # Dispara apenas quando o botão "Buscar" for explicitamente clicado
-    if buscar and codigo.strip():
-        processar_busca(db, empresa_id, codigo)
-        st.rerun()
+    # Recupera o valor guardado de forma persistente
+    codigo_atual = st.session_state.get("cad_barcode_field_final", "").strip()
+
+    if buscar:
+        processar_busca(db, empresa_id, codigo_atual)
 
     if st.session_state.produto_existente:
-        st.info(f"🔗 Editando produto existente (ID no banco: {st.session_state.produto_id})")
+        st.info(f"🔗 Modo de Edição Ativo (ID do Produto: {st.session_state.produto_id})")
 
-    # Formulário renderiza os dados de forma estável
+    # Formulário de entrada de dados
     with st.form(key=f"form_main_cadastro_{st.session_state.form_id_cadastro}", clear_on_submit=False):
         c1, c2 = st.columns(2)
 
@@ -212,7 +217,7 @@ def show_cadastro():
 
                 payload = {
                     "empresa_id": int(empresa_id),
-                    "barcode": codigo.strip() if codigo.strip() else None,
+                    "barcode": codigo_atual if codigo_atual else None,
                     "nome": nome_final,
                     "categoria": categoria,
                     "quantidade": int(qtd),
@@ -226,14 +231,14 @@ def show_cadastro():
                 try:
                     if st.session_state.produto_existente:
                         db.table("produtos").update(payload).eq("id", st.session_state.produto_id).execute()
-                        st.success("🎉 Produto updated com sucesso!")
+                        st.success("🎉 Produto atualizado com sucesso!")
                     else:
                         db.table("produtos").insert(payload).execute()
                         st.success("🎉 Novo produto cadastrado com sucesso!")
 
                     time.sleep(1)
 
-                    # Reset limpo pós-salvamento
+                    # Limpeza completa de estado após salvar
                     st.session_state.cad_nome = ""
                     st.session_state.cad_categoria = "Outros"
                     st.session_state.cad_unidade = "un"
@@ -245,7 +250,7 @@ def show_cadastro():
                     st.session_state.cad_fornecedor = ""
                     st.session_state.cad_lote = ""
                     st.session_state.cad_obs = ""
-                    st.session_state.ultimo_codigo_buscado = ""
+                    st.session_state["cad_barcode_field_final"] = ""
                     st.session_state.produto_id = None
                     st.session_state.produto_existente = False
                     
