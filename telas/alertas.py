@@ -115,14 +115,43 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
         return False
 
 
-# ── Interface da Central de Alertas ───────────────────────────────────────────
+# ... todo o início do seu arquivo telas/alertas.py (com a chave e a função verificar_e_enviar_alertas) continua EXATAMENTE IGUAL ...
+
+
+# ── Interface da Central de Alertas (SUBSTITUA DAQUI ATÉ O FINAL) ──────────────
 def show_alertas():
     """
     Exibe a interface gráfica na aba 'Alertas' do menu do Streamlit.
     """
     st.markdown("## 🔔 Central de Alertas Ativos")
     st.markdown("---")
-    st.info("💡 **Sistema de Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo são processados em segundo plano e disparados diretamente para a sua caixa de entrada cadastrada.")
     
-    st.markdown("### 📬 Status das Notificações")
+    # 1. Recupera as conexões ativas que o seu app.py já colocou na sessão
+    db = st.session_state.get("db")
+    empresa_id = st.session_state.get("empresa_id", 1)
+    
+    st.info("💡 **Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo cruzam os dados do Supabase e notificam você por e-mail antes do prejuízo acontecer.")
+    
+    st.markdown("### 📬 Configuração de Disparo")
+    
+    # 2. Caixa de texto para você colocar o e-mail de teste (Obrigatório aparecer na tela)
+    email_destino = st.text_input("E-mail de Destino para Alertas:", value="seu_email_aqui@gmail.com")
+    
+    st.markdown(" ")
+    
+    # 3. O botão de disparo que vai ativar a mágica
+    btn_verificar = st.button("🚀 Verificar Estoque e Enviar Relatório", type="primary", use_container_width=True)
+    
+    if btn_verificar:
+        with st.spinner("Varrendo o Supabase e estruturando relatório em HTML..."):
+            enviou = verificar_e_enviar_alertas(db, empresa_id, email_destino)
+            
+            if enviou:
+                st.success(f"🎉 **Espetáculo!** O relatório de alertas foi enviado com sucesso para **{email_destino}**!")
+                st.balloons()
+            else:
+                st.info("🔍 **Tudo em ordem por aqui!** O sistema rodou a varredura, mas não encontrou nenhum produto vencido, próximo do vencimento ou abaixo do estoque mínimo.")
+                
+    st.markdown("---")
+    st.markdown("### ⚙️ Status do Sistema")
     st.success("✅ Integração com servidor **Resend** ativa e operando normalmente.")
