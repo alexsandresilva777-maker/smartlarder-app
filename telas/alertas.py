@@ -22,7 +22,7 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
         return False
     
     hoje = date.today()
-    limite_validade = hoje + timedelta(days=15) # Alerta para vencimentos nos próximos 15 dias
+    limite_validade = hoje + timedelta(days=365) # Alerta para vencimentos nos próximos 15 dias
     
     try:
         # Busca estrita pelos produtos vinculados à empresa logada
