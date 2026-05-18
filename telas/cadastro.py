@@ -1,300 +1,461 @@
 # -*- coding: utf-8 -*-
-import re
+"""
+telas/cadastro.py — SmartLarder Pro v2 (Versão Consolidada e Corrigida)
+- Busca em cascata estável (Supabase -> Open Food Facts -> Brasil API)
+- Reatividade blindada usando chaves de Session State (Resolve campos em branco)
+- Suporte à câmera e leitores integrados
+"""
 import time
 import requests
 import streamlit as st
 from datetime import date
 
-# =========================================================
-# SESSION STATE
-# =========================================================
-def init_state():
+# ── Constantes ────────────────────────────────────────────────────────────────
+CATEGORIAS = ["Alimentos", "Bebidas", "Limpeza", "Higiene", "Medicamentos", "Embalagens", "Outros"]
+UNIDADES = ["un", "kg", "g", "L", "ml", "cx", "fardo", "pct", "dz"]
+
+# Chaves internas estruturadas
+_K_CODIGO    = "cad_codigo"
+_K_BUSCADO   = "cad_ultimo_buscado"
+_K_CAM_ON    = "cad_cam_on"
+_K_FORM_ID   = "form_id_cadastro"
+
+# Chaves mapeadas diretamente para os componentes do formulário
+FORM_KEYS = [
+    "cad_nome", "cad_categoria", "cad_fornecedor", "cad_lote", 
+    "cad_validade", "cad_quantidade", "cad_unidade", "cad_preco", 
+    "cad_estoque_minimo", "cad_localizacao", "cad_observacoes"
+]
+
+_CAT_MAP = {
+    "bebida": "Bebidas", "drink": "Bebidas", "suco": "Bebidas",
+    "refrigerante": "Bebidas", "cerveja": "Bebidas", "vinho": "Bebidas",
+    "agua": "Bebidas", "leite": "Bebidas", "cha": "Bebidas", "cafe": "Bebidas",
+    "limpeza": "Limpeza", "detergente": "Limpeza", "sabao": "Limpeza",
+    "desinfet": "Limpeza", "alvejante": "Limpeza", "amaciante": "Limpeza",
+    "higiene": "Higiene", "sabonete": "Higiene", "shampoo": "Higiene",
+    "creme": "Higiene", "dental": "Higiene", "desodorante": "Higiene",
+    "cosmet": "Higiene", "perfume": "Higiene",
+    "medic": "Medicamentos", "farmac": "Medicamentos",
+    "suplement": "Medicamentos", "vitam": "Medicamentos",
+    "embalagem": "Embalagens",
+}
+
+def _mapear_categoria(texto: str) -> str:
+    t = texto.lower()
+    for chave, cat in _CAT_MAP.items():
+        if chave in t:
+            return cat
+    return "Alimentos"
+
+# ── Inicialização do Estado (Garantindo persistência reativa) ──────────────────
+def _init_state():
+    if _K_CODIGO not in st.session_state:
+        st.session_state[_K_CODIGO] = ""
+    if _K_BUSCADO not in st.session_state:
+        st.session_state[_K_BUSCADO] = ""
+    if _K_CAM_ON not in st.session_state:
+        st.session_state[_K_CAM_ON] = False
+    if _K_FORM_ID not in st.session_state:
+        st.session_state[_K_FORM_ID] = 0
+    if "produto_existente" not in st.session_state:
+        st.session_state["produto_existente"] = False
+    if "produto_id" not in st.session_state:
+        st.session_state["produto_id"] = None
+    if "status_busca" not in st.session_state:
+        st.session_state["status_busca"] = {}
+
+    # Defaults para os inputs do formulário
     defaults = {
         "cad_nome": "",
-        "cad_categoria": "Outros",
-        "cad_unidade": "un",
-        "cad_quantidade": 0,
-        "cad_qtd_min": 0,
-        "cad_preco": 0.0,
-        "cad_validade": date.today(),
-        "cad_localizacao": "",
+        "cad_categoria": "Alimentos",
         "cad_fornecedor": "",
         "cad_lote": "",
-        "cad_obs": "",
-        "ultimo_codigo_buscado": "",
-        "produto_id": None,
-        "produto_existente": False,
-        "form_id_cadastro": 0, 
+        "cad_validade": date.today(),
+        "cad_quantidade": 1.0,
+        "cad_unidade": "un",
+        "cad_preco": 0.0,
+        "cad_estoque_minimo": 0.0,
+        "cad_localizacao": "",
+        "cad_observacoes": ""
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
-# =========================================================
-# OPEN FOOD FACTS (MARCA INTEGRADA AO NOME)
-# =========================================================
-def buscar_openfoodfacts(codigo):
+# ── APIs de busca em cascata ──────────────────────────────────────────────────
+def _buscar_off(codigo: str) -> dict:
     try:
-        url = f"https://world.openfoodfacts.org/api/v0/product/{codigo}.json"
-        r = requests.get(url, timeout=5)
+        r = requests.get(
+            f"https://world.openfoodfacts.org/api/v0/product/{codigo}.json",
+            timeout=5,
+            headers={"User-Agent": "SmartLarder-Pro/2.0"},
+        )
         if r.status_code != 200:
-            return None
+            return {}
         data = r.json()
         if data.get("status") != 1:
-            return None
+            return {}
         p = data.get("product", {})
-        
-        nome_base = p.get("product_name", "").strip()
-        marca = p.get("brands", "").strip()
-        
-        if marca and nome_base:
-            if nome_base.lower().startswith(marca.lower()):
-                nome_completo = nome_base
-            else:
-                nome_completo = f"{marca} - {nome_base}"
-        else:
-            nome_completo = nome_base or marca
-
-        categorias = str(p.get("categories", "")).lower()
-        categoria = "Outros"
-
-        if "bebida" in categorias or "drink" in categorias:
-            categoria = "Bebidas"
-        elif "food" in categorias or "alimento" in categorias:
-            categoria = "Alimentos"
-
-        return {"nome": nome_completo.upper(), "categoria": categoria}
+        nome = (p.get("product_name_pt") or p.get("product_name") or "").strip()
+        if not nome:
+            return {}
+        marca = (p.get("brands") or "").split(",")[0].strip()
+        cats  = p.get("categories_tags") or p.get("categories") or ""
+        if isinstance(cats, list):
+            cats = " ".join(cats)
+        return {
+            "nome": nome.upper(),
+            "categoria": _mapear_categoria(cats),
+            "fornecedor": marca.upper(),
+            "_fonte": "Open Food Facts",
+        }
     except Exception:
-        return None
+        return {}
 
-# =========================================================
-# EXTRAIR F/L/O DA LOCALIZAÇÃO
-# =========================================================
-def parse_localizacao(txt):
-    if not txt:
-        return "", "", "", ""
-    local = txt
-    fornecedor = ""
-    lote = ""
-    obs = ""
+def _buscar_brasil_api(codigo: str) -> dict:
     try:
-        m = re.search(r"\[(.*?)\]", txt)
-        if m:
-            tags = m.group(1)
-            local = txt[:m.start()].strip()
-            for item in tags.split("|"):
-                item = item.strip()
-                if item.startswith("F:"):
-                    fornecedor = item[2:].strip()
-                elif item.startswith("L:"):
-                    lote = item[2:].strip()
-                elif item.startswith("O:"):
-                    obs = item[2:].strip()
+        r = requests.get(
+            f"https://brasilapi.com.br/api/ean/v1/{codigo}",
+            timeout=5,
+            headers={"User-Agent": "SmartLarder-Pro/2.0"},
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+        nome = (data.get("description") or data.get("nome") or "").strip()
+        if not nome:
+            return {}
+        marca = (data.get("brand") or data.get("marca") or "").strip()
+        cats  = data.get("category") or data.get("categoria") or ""
+        return {
+            "nome": nome.upper(),
+            "categoria": _mapear_categoria(str(cats)),
+            "fornecedor": marca.upper(),
+            "_fonte": "Brasil API",
+        }
     except Exception:
-        pass
-    return local, fornecedor, lote, obs
+        return {}
 
-# =========================================================
-# BUSCA DIRETAMENTE NAS COLUNAS REAIS
-# =========================================================
-def buscar_produto(db, empresa_id, codigo):
-    colunas = ["barcode", "codigo_barras", "codigo"]
-    for coluna in colunas:
+def _buscar_supabase(db, empresa_id: int, codigo: str) -> dict:
+    if not db or not codigo:
+        return {}
+    for coluna in ("codigo_barras", "codigo"):
         try:
-            r = db.table("produtos").select("*").eq("empresa_id", int(empresa_id)).eq(coluna, codigo).limit(1).execute()
-            if r.data:
-                return r.data[0]
-        except Exception:
-            pass
-    return None
+            res = db.table("produtos").select("*").eq(coluna, codigo).eq("empresa_id", empresa_id).limit(1).execute()
+            if res and hasattr(res, 'data') and res.data:
+                return {**res.data[0], "_fonte": "banco_local"}
+        except Exception as e:
+            if any(w in str(e).lower() for w in ("column", "does not exist")):
+                continue
+            return {}
+    return {}
 
-# =========================================================
-# PROCESSAR BUSCA
-# =========================================================
-def processar_busca(db, empresa_id, codigo):
+# ── Lógica Central do Processamento ───────────────────────────────────────────
+def _executar_busca(codigo: str, db, empresa_id: int):
     codigo = str(codigo).strip()
     if not codigo:
         return
 
-    st.session_state.ultimo_codigo_buscado = codigo
+    st.session_state[_K_CODIGO] = codigo
+    st.session_state[_K_BUSCADO] = codigo
 
-    with st.spinner("Buscando dados do produto..."):
-        produto = buscar_produto(db, empresa_id, codigo)
+    # 1. Tenta Banco Local
+    local = _buscar_supabase(db, empresa_id, codigo)
+    if local:
+        st.session_state["produto_existente"] = True
+        st.session_state["produto_id"] = local.get("id")
+        
+        st.session_state["cad_nome"] = str(local.get("nome", "")).upper()
+        st.session_state["cad_categoria"] = str(local.get("categoria", "Alimentos"))
+        st.session_state["cad_fornecedor"] = str(local.get("fornecedor", "")).upper()
+        st.session_state["cad_lote"] = str(local.get("lote", ""))
+        st.session_state["cad_quantidade"] = float(local.get("quantidade", 1.0))
+        st.session_state["cad_unidade"] = str(local.get("unidade", "un"))
+        st.session_state["cad_preco"] = float(local.get("preco_custo", 0.0) or 0.0)
+        st.session_state["cad_estoque_minimo"] = float(local.get("estoque_minimo", 0.0) or 0.0)
+        st.session_state["cad_localizacao"] = str(local.get("localizacao", ""))
+        st.session_state["cad_observacoes"] = str(local.get("observacoes", ""))
+        
+        if local.get("validade"):
+            try: st.session_state["cad_validade"] = date.fromisoformat(local["validade"])
+            except Exception: st.session_state["cad_validade"] = date.today()
+        elif local.get("data_validade"):
+            try: st.session_state["cad_validade"] = date.fromisoformat(local["data_validade"])
+            except Exception: st.session_state["cad_validade"] = date.today()
 
-        if produto:
-            st.session_state.produto_existente = True
-            st.session_state.produto_id = produto.get("id")
+        st.session_state["status_busca"] = {"tipo": "info", "msg": "📦 Produto encontrado no seu banco local. Editando registro."}
+        st.session_state[_K_FORM_ID] += 1
+        return
 
-            local, forn, lote, obs = parse_localizacao(produto.get("localizacao", ""))
+    # 2. Tenta Open Food Facts
+    off = _buscar_off(codigo)
+    if off:
+        _aplicar_dados_externos(off)
+        return
 
-            # Alimenta o State com o que veio do banco de dados
-            st.session_state.cad_nome = str(produto.get("nome", "")).upper()
-            st.session_state.cad_categoria = produto.get("categoria", "Outros")
-            st.session_state.cad_quantidade = int(produto.get("quantidade", 0))
-            st.session_state.cad_unidade = produto.get("unidade", "un")
-            st.session_state.cad_qtd_min = int(produto.get("quantidade_minima", 0))
-            st.session_state.cad_preco = float(produto.get("preco_custo", 0))
-            st.session_state.cad_localizacao = local
-            st.session_state.cad_fornecedor = forn
-            st.session_state.cad_lote = lote
-            st.session_state.cad_obs = obs
+    # 3. Tenta Brasil API
+    br = _buscar_brasil_api(codigo)
+    if br:
+        _aplicar_dados_externos(br)
+        return
 
-            if produto.get("data_validade"):
-                try:
-                    st.session_state.cad_validade = date.fromisoformat(produto["data_validade"])
-                except Exception:
-                    st.session_state.cad_validade = date.today()
+    # Caso não encontre em lugar nenhum
+    st.session_state["produto_existente"] = False
+    st.session_state["produto_id"] = None
+    st.session_state["cad_nome"] = ""
+    st.session_state["cad_categoria"] = "Alimentos"
+    st.session_state["cad_fornecedor"] = ""
+    st.session_state["cad_lote"] = ""
+    st.session_state["cad_quantidade"] = 1.0
+    st.session_state["cad_preco"] = 0.0
+    st.session_state["cad_estoque_minimo"] = 0.0
+    st.session_state["cad_localizacao"] = ""
+    st.session_state["cad_observacoes"] = ""
+    st.session_state["status_busca"] = {"tipo": "warning", "msg": "⚠️ Produto não encontrado nas bases. Preencha manualmente abaixo."}
+    st.session_state[_K_FORM_ID] += 1
 
-            st.success("✅ Produto localizado no banco de dados!")
-            return
+def _aplicar_dados_externos(res_api: dict):
+    st.session_state["produto_existente"] = False
+    st.session_state["produto_id"] = None
+    st.session_state["cad_nome"] = res_api["nome"]
+    st.session_state["cad_categoria"] = res_api["categoria"]
+    st.session_state["cad_fornecedor"] = res_api["fornecedor"]
+    
+    # Limpa dados logísticos para evitar heranças incorretas
+    st.session_state["cad_lote"] = ""
+    st.session_state["cad_quantidade"] = 1.0
+    st.session_state["cad_preco"] = 0.0
+    st.session_state["cad_estoque_minimo"] = 0.0
+    st.session_state["cad_localizacao"] = ""
+    st.session_state["cad_observacoes"] = ""
+    st.session_state["cad_validade"] = date.today()
+    
+    st.session_state["status_busca"] = {"tipo": "success", "msg": f"🌐 Encontrado via {res_api['_fonte']}: {res_api['nome']}"}
+    st.session_state[_K_FORM_ID] += 1
 
-        # Se não achou no banco, tenta a API pública
-        api = buscar_openfoodfacts(codigo)
-        if api:
-            if api.get("nome"):
-                st.session_state.cad_nome = api["nome"].upper()
-            st.session_state.cad_categoria = api.get("categoria", "Outros")
-            st.info("🌐 Produto localizado na internet.")
-        else:
-            st.warning("⚠️ Produto não cadastrado. Continue manualmente.")
-
-        # Reseta os controles de ID se for um produto inteiramente novo
-        st.session_state.produto_existente = False
-        st.session_state.produto_id = None
-
-# =========================================================
-# COMPACTAR E CORTAR STRINGS (MÁXIMO 100 CARACTERES)
-# =========================================================
-def montar_localizacao(local, fornecedor, lote, obs):
-    local = str(local).strip()
-    extras = []
-    if fornecedor.strip():
-        extras.append(f"F:{fornecedor.strip().upper()}")
-    if lote.strip():
-        extras.append(f"L:{lote.strip().upper()}")
-    if obs.strip():
-        extras.append(f"O:{obs.strip().upper()}")
-
-    if extras:
-        final = f"{local} [{'|'.join(extras)}]"
-    else:
-        final = local
-
-    return final.strip()[:100]
-
-# =========================================================
-# RENDERIZAÇÃO DA TELA
-# =========================================================
+# ── Renderização da Interface ─────────────────────────────────────────────────
 def show_cadastro():
-    init_state()
+    _init_state()
 
     db = st.session_state.get("db")
-    empresa_id = st.session_state.get("empresa_id")
+    empresa_id = st.session_state.get("empresa_id", 1)
+    user_id = st.session_state.get("user_id", 1)
+    username = st.session_state.get("username", "")
 
-    if not db:
-        st.error("❌ Banco de dados não conectado.")
-        return
+    st.markdown("## ➕ Cadastrar Produto")
+    st.markdown("### 🔍 Código de Barras (EAN)")
 
-    if not empresa_id:
-        st.error("❌ Empresa inválida ou não identificada no sistema.")
-        return
+    # Barra superior estável de Input do EAN
+    col_ean, col_btn = st.columns([4, 1])
+    with col_ean:
+        codigo_input = st.text_input(
+            "EAN",
+            value=st.session_state[_K_CODIGO],
+            placeholder="Digite, escaneie ou use a câmera...",
+            key="cad_input_ean",
+            label_visibility="collapsed",
+        )
+    with col_btn:
+        btn_buscar = st.button("🔍 Buscar", use_container_width=True, type="primary")
 
-    st.markdown("## ➕ Cadastro de Produto")
+    # Atualiza o estado se digitado algo
+    if codigo_input != st.session_state[_K_CODIGO]:
+        st.session_state[_K_CODIGO] = codigo_input
 
-    key_barcode = f"cad_barcode_{st.session_state.form_id_cadastro}"
+    # Gatilho de Busca Automática (leitor ou digitação completa)
+    codigo_mudou = (
+        codigo_input and 
+        codigo_input != st.session_state[_K_BUSCADO] and 
+        (len(codigo_input) >= 8 or (len(codigo_input) > 0 and not codigo_input[-1].isdigit()))
+    )
 
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        codigo = st.text_input("Código de Barras (EAN)", key=key_barcode)
-    with col2:
-        st.markdown("<div style='padding-top:28px;'></div>", unsafe_allow_html=True)
-        buscar = st.button("🔎 Buscar", use_container_width=True)
-
-    if (buscar or (codigo and codigo != st.session_state.ultimo_codigo_buscado)) and codigo.strip():
-        processar_busca(db, empresa_id, codigo)
+    if (btn_buscar and codigo_input) or codigo_mudou:
+        _executar_busca(codigo_input, db, empresa_id)
         st.rerun()
 
-    # O segredo do retorno está aqui: chaves amarradas dinamicamente ao ID do form garantem o redesenho dos dados
-    with st.form(key=f"form_cadastro_final_{st.session_state.form_id_cadastro}", clear_on_submit=False):
-        c1, c2 = st.columns(2)
+    # Controle de Câmera Integrado do Claude
+    usar_camera = st.checkbox("📷 Usar câmera para escanear código de barras", value=st.session_state[_K_CAM_ON], key="cad_check_cam")
+    st.session_state[_K_CAM_ON] = usar_camera
 
-        with c1:
-            nome = st.text_input("Nome do Produto *", value=st.session_state.cad_nome)
-            
-            lista_categorias = ["Alimentos", "Bebidas", "Limpeza", "Higiene", "Medicamentos", "Outros"]
-            idx_cat = lista_categorias.index(st.session_state.cad_categoria) if st.session_state.cad_categoria in lista_categorias else 5
-            categoria = st.selectbox("Categoria *", lista_categorias, index=idx_cat)
-            
-            lista_unidades = ["un", "kg", "g", "L", "ml", "cx", "fardo", "pct", "dz"]
-            idx_uni = lista_unidades.index(st.session_state.cad_unidade) if st.session_state.cad_unidade in lista_unidades else 0
-            unidade = st.selectbox("Unidade de Medida *", lista_unidades, index=idx_uni)
-            
-            qtd = st.number_input("Quantidade Inicial *", min_value=0, step=1, value=int(st.session_state.cad_quantidade))
-            qtd_min = st.number_input("Estoque Mínimo Desejado", min_value=0, step=1, value=int(st.session_state.cad_qtd_min))
-
-        with c2:
-            preco = st.number_input("Preço de Custo por Unidade (R$)", min_value=0.0, step=0.01, format="%.2f", value=st.session_state.cad_preco)
-            validade = st.date_input("Data de Validade", value=st.session_state.cad_validade)
-            localizacao = st.text_input("Localização / Armário", value=st.session_state.cad_localizacao)
-            fornecedor = st.text_input("Fornecedor / Loja", value=st.session_state.cad_fornecedor)
-            lote = st.text_input("Número do Lote", value=st.session_state.cad_lote)
-
-        obs = st.text_area("Observações", value=st.session_state.cad_obs)
-
-        texto_botao = "🔄 Atualizar Produto" if st.session_state.produto_existente else "💾 Salvar Produto"
-        salvar = st.form_submit_button(texto_botao, type="primary", use_container_width=True)
-
-        if salvar:
-            nome_final = nome.strip().upper()
-
-            if nome_final:
-                local_final = montar_localizacao(localizacao, fornecedor, lote, obs)
-
-                payload = {
-                    "empresa_id": int(empresa_id),
-                    "barcode": codigo.strip() if codigo.strip() else None,
-                    "nome": nome_final,
-                    "categoria": categoria,
-                    "quantidade": int(qtd),
-                    "unidade": unidade,
-                    "quantidade_minima": int(qtd_min),
-                    "preco_custo": float(preco),
-                    "data_validade": validade.strftime("%Y-%m-%d"),
-                    "localizacao": local_final
-                }
-
-                try:
-                    if st.session_state.produto_existente:
-                        db.table("produtos").update(payload).eq("id", st.session_state.produto_id).execute()
-                        st.success("🎉 Produto atualizado com sucesso!")
-                    else:
-                        db.table("produtos").insert(payload).execute()
-                        st.success("🎉 Novo produto cadastrado com sucesso!")
-
-                    time.sleep(1)
-
-                    # Reseta as variáveis internas para a próxima digitação
-                    st.session_state.cad_nome = ""
-                    st.session_state.cad_categoria = "Outros"
-                    st.session_state.cad_unidade = "un"
-                    st.session_state.cad_quantidade = 0
-                    st.session_state.cad_qtd_min = 0
-                    st.session_state.cad_preco = 0.0
-                    st.session_state.cad_validade = date.today()
-                    st.session_state.cad_localizacao = ""
-                    st.session_state.cad_fornecedor = ""
-                    st.session_state.cad_lote = ""
-                    st.session_state.cad_obs = ""
-                    st.session_state.ultimo_codigo_buscado = ""
-                    st.session_state.produto_id = None
-                    st.session_state.produto_existente = False
-                    
-                    # Muda o ID do form, limpando a tela visualmente para a próxima entrada
-                    st.session_state.form_id_cadastro += 1
-
-                    st.rerun()
-
-                except Exception as e:
-                    st.error(f"❌ Erro ao persistir dados no Supabase: {e}")
+    if usar_camera:
+        imagem = st.camera_input("Aponte para o código de barras", key="cad_camera_snap")
+        if imagem:
+            codigo_cam = _decodificar_imagem(imagem.getvalue())
+            if codigo_cam == "IMPORT_ERROR":
+                st.warning("⚠️ `pyzbar` ou `Pillow` não instalados. Ajuste o requirements.txt e packages.txt.")
+            elif codigo_cam:
+                st.success(f"✅ Código detectado: **{codigo_cam}**")
+                st.session_state[_K_CAM_ON] = False
+                _executar_busca(codigo_cam, db, empresa_id)
+                st.rerun()
             else:
-                st.error("❌ O nome do produto é obrigatório.")
+                st.warning("⚠️ Código não detectado. Melhore a iluminação.")
+
+    # Exibição de alertas persistentes pós-busca
+    status = st.session_state["status_busca"]
+    if status:
+        if status["tipo"] == "info": st.info(status["msg"])
+        elif status["tipo"] == "success": st.success(status["msg"])
+        elif status["tipo"] == "warning": st.warning(status["msg"])
+
+    st.markdown("---")
+    st.markdown("### 📝 Dados do Produto")
+
+    # FORMULÁRIO DINÂMICO REATIVO (Usando Keys vinculadas ao State)
+    with st.form(key=f"form_cadastro_produto_v3_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.text_input("Nome do Produto *", key="cad_nome", placeholder="Ex: ARROZ TIO JOÃO 5KG")
+            st.selectbox("Categoria *", CATEGORIAS, key="cad_categoria")
+            st.text_input("Fornecedor / Marca", key="cad_fornecedor", placeholder="Ex: Nestlé")
+            st.text_input("Número do Lote", key="cad_lote", placeholder="Ex: L2025001")
+        with c2:
+            st.date_input("Data de Validade *", key="cad_validade", min_value=date(2000, 1, 1))
+            st.number_input("Quantidade *", min_value=0.01, step=1.0, format="%.2f", key="cad_quantidade")
+            st.selectbox("Unidade", UNIDADES, key="cad_unidade")
+            st.number_input("Preço de Custo (R$)", min_value=0.0, step=0.01, format="%.2f", key="cad_preco")
+
+        c3, c4 = st.columns(2)
+        with c3:
+            st.number_input("Estoque Mínimo", min_value=0.0, step=1.0, format="%.1f", key="cad_estoque_minimo", help="Alerta quando o estoque cair abaixo deste valor")
+        with c4:
+            st.text_input("Localização", key="cad_localizacao", placeholder="Ex: Prateleira A3")
+
+        st.text_area("Observações", key="cad_observacoes", placeholder="Informações adicionais...", height=70)
+
+        texto_btn_submit = "🔄 Atualizar Produto Existente" if st.session_state["produto_existente"] else "💾 Salvar Produto"
+        submitted = st.form_submit_button(texto_btn_submit, type="primary", use_container_width=True)
+
+    if submitted:
+        # Recupera os dados validados diretamente das chaves ativas do form
+        nome_val = st.session_state["cad_nome"].strip()
+        qtd_val = st.session_state["cad_quantidade"]
+
+        erros = []
+        if not nome_val:
+            erros.append("Nome do produto é obrigatório.")
+        if qtd_val <= 0:
+            erros.append("Quantidade deve ser maior que zero.")
+
+        if erros:
+            for e in erros:
+                st.error(f"❌ {e}")
+            return
+
+        _salvar_produto(
+            db=db,
+            empresa_id=empresa_id,
+            user_id=user_id,
+            username=username,
+            dados={
+                "codigo_input": st.session_state[_K_CODIGO],
+                "nome": nome_val,
+                "categoria": st.session_state["cad_categoria"],
+                "quantidade": qtd_val,
+                "unidade": st.session_state["cad_unidade"],
+                "validade": str(st.session_state["cad_validade"]),
+                "lote": st.session_state["cad_lote"].strip() or None,
+                "fornecedor": st.session_state["cad_fornecedor"].strip() or None,
+                "localizacao": st.session_state["cad_localizacao"].strip() or None,
+                "preco_custo": st.session_state["cad_preco"],
+                "estoque_min": st.session_state["cad_estoque_minimo"],
+                "observacoes": st.session_state["cad_observacoes"].strip() or None,
+            },
+        )
+
+# ── Persistência com Tipos Rígidos e Segurança de Colunas ──────────────────────
+def _salvar_produto(db, empresa_id, user_id, username, dados: dict):
+    if not db:
+        st.error("❌ Sem conexão com o banco de dados.")
+        return
+
+    payload_base = {
+        "nome": dados["nome"].upper(),
+        "categoria": dados["categoria"],
+        "quantidade": float(dados["quantidade"]),
+        "unidade": dados["unidade"],
+        "preco_custo": float(dados["preco_custo"]),
+        "empresa_id": int(empresa_id),
+        "user_id": int(user_id),
+        "criado_por": username,
+    }
+
+    # Tratamento flexível do nome da coluna de estoque mínimo mapeado na tabela
+    payload_base["estoque_minimo"] = float(dados["estoque_min"])
+
+    # Tratamento flexível da coluna de validade do banco
+    payload_base["validade"] = dados["validade"]
+    payload_base["data_validade"] = dados["validade"]
+
+    for campo in ("lote", "fornecedor", "localizacao", "observacoes"):
+        if dados.get(campo):
+            payload_base[campo] = dados[campo]
+
+    codigo = dados.get("codigo_input", "").strip()
+
+    if not codigo:
+        _inserir_supabase(db, payload_base)
+        return
+
+    # Tentativa dupla de colunas (Design Defensivo do Claude)
+    for coluna in ("codigo_barras", "codigo"):
+        payload = {**payload_base, coluna: codigo}
+        if _inserir_supabase(db, payload, silencioso=True):
+            return
+
+    st.warning("⚠️ Estrutura de código não reconhecida. Salvando registro básico.")
+    _inserir_supabase(db, payload_base)
+
+def _inserir_supabase(db, payload: dict, silencioso: bool = False) -> bool:
+    try:
+        # Se for um update (produto existente)
+        if st.session_state["produto_existente"] and st.session_state["produto_id"]:
+            res = db.table("produtos").update(payload).eq("id", st.session_state["produto_id"]).execute()
+        else:
+            # Caso contrário, insere um novo
+            res = db.table("produtos").insert(payload).execute()
+
+        if res and hasattr(res, 'data') and res.data:
+            if not silencioso:
+                st.success(f"🎉 **{payload.get('nome')}** salvo com sucesso!")
+                st.balloons()
+                time.sleep(1)
+                
+                # Reseta o fluxo de estados pós inserção com sucesso
+                st.session_state[_K_CODIGO] = ""
+                st.session_state[_K_BUSCADO] = ""
+                st.session_state["status_busca"] = {}
+                st.session_state["produto_existente"] = False
+                st.session_state["produto_id"] = None
+                
+                for k in FORM_KEYS:
+                    if k in st.session_state:
+                        del st.session_state[k]
+                st.session_state[_K_FORM_ID] += 1
+                st.rerun()
+            return True
+        return False
+    except Exception as e:
+        msg = str(e).lower()
+        if silencioso and any(w in msg for w in ("column", "does not exist", "undefined")):
+            return False
+        if "duplicate" in msg or "unique" in msg:
+            st.warning("⚠️ Um produto com este código de barras já se encontra registrado.")
+            return True
+        if not silencioso:
+            st.error(f"❌ Falha ao salvar no Supabase: {e}")
+        return False
+
+def _decodificar_imagem(imagem_bytes: bytes) -> str:
+    try:
+        from PIL import Image
+        from pyzbar.pyzbar import decode as pyzbar_decode
+        import io
+        img = Image.open(io.BytesIO(imagem_bytes))
+        codigos = pyzbar_decode(img)
+        return codigos[0].data.decode("utf-8").strip() if codigos else ""
+    except ImportError:
+        return "IMPORT_ERROR"
+    except Exception:
+        return ""
