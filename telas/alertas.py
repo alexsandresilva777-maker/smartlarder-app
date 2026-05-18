@@ -1,60 +1,117 @@
 # -*- coding: utf-8 -*-
+"""
+telas/alertas.py — Módulo de Notificações do SmartLarder Pro v2
+- Integração oficial com o Resend.
+- Varredura de estoque mínimo (quantidade_minima) e validades no Supabase.
+"""
+from datetime import date, timedelta
+import resend
 import streamlit as st
-import datetime
 
-def show_alertas():
-    st.markdown("## 🔔 Central de Alertas e Validades")
-    st.markdown("---")
-    
-    db = st.session_state.get("db")
-    empresa_id = st.session_state.get("empresa_id", 1)
-    
+# Substitua pelo seu token copiado do painel do Resend
+resend.api_key = "SUA_CHAVE_RE_AQUI"
+
+def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
+    """
+    Varre o Supabase procurando produtos críticos (vencendo ou estoque baixo)
+    e dispara um e-mail consolidado para o cliente.
+    """
     if not db:
-        st.error("Banco de dados inacessível.")
-        return
-
+        return False
+    
+    hoje = date.today()
+    limite_validade = hoje + timedelta(days=15) # Alerta para vencimentos em até 15 dias
+    
     try:
-        # Puxa os dados gerais para checar as colunas sem forçar uma ordenação por coluna inexistente
+        # Busca os produtos vinculados à empresa do usuário
         res = db.table("produtos").select("*").eq("empresa_id", empresa_id).execute()
-        
-        if not res.data:
-            st.success("🎉 Nenhum produto cadastrado no momento!")
-            return
+        if not res or not hasattr(res, 'data') or not res.data:
+            return False
             
-        hoje = datetime.date.today()
-        vencidos = 0
-        criticos = 0
+        produtos = res.data
+        itens_vencendo = []
+        itens_estoque_baixo = []
         
-        # Mapeia dinamicamente qual nome de coluna o banco está usando para a data
-        primeiro_registro = res.data[0]
-        coluna_data = None
-        for possivel_nome in ["validade", "data_validade", "vencimento", "data_vencimento"]:
-            if possivel_nome in primeiro_registro:
-                coluna_data = possivel_nome
-                break
-        
-        if not coluna_data:
-            st.warning("⚠️ Nota: Nenhuma coluna de data de validade foi encontrada na tabela do banco.")
-            st.dataframe(res.data, use_container_width=True)
-            return
-
-        for p in res.data:
-            if p.get(coluna_data):
+        for p in produtos:
+            nome = p.get("nome", "PRODUTO SEM NOME").upper()
+            qtd = float(p.get("quantidade") or 0.0)
+            qtd_min = float(p.get("quantidade_minima") or 0.0)
+            unidade = p.get("unidade", "un")
+            
+            # 📉 Validação baseada nas colunas reais do seu banco
+            if qtd <= qtd_min:
+                itens_estoque_baixo.append(
+                    f"<li>❌ <b>{nome}</b>: Estoque atual em {qtd:.2f} {unidade} (Mínimo: {qtd_min:.2f} {unidade})</li>"
+                )
+            
+            # 🚨 Validação da data de validade
+            data_v_str = p.get("data_validade")
+            if data_v_str:
                 try:
-                    dt_val = datetime.datetime.strptime(str(p[coluna_data])[:10], "%Y-%m-%d").date()
-                    if dt_val < hoje:
-                        vencidos += 1
-                    elif (dt_val - hoje).days <= 7:
-                        criticos += 1
-                except:
+                    data_v = date.fromisoformat(data_v_str)
+                    if data_v <= hoje:
+                        itens_vencendo.append(
+                            f"<li style='color: red;'>🚨 <b>{nome}</b>: <b>VENCIDO</b> em {data_v.strftime('%d/%m/%Y')}</li>"
+                        )
+                    elif data_v <= limite_validade:
+                        itens_vencendo.append(
+                            f"<li>⚠️ <b>{nome}</b>: Vence em {data_v.strftime('%d/%m/%Y')}</li>"
+                        )
+                except ValueError:
                     pass
-                    
-        c1, c2 = st.columns(2)
-        c1.metric("Produtos Vencidos", vencidos)
-        c2.metric("Produtos em Alerta (≤ 7 dias)", criticos)
+
+        # Evita envios desnecessários se o estoque estiver totalmente regularizado
+        if not itens_vencendo and not itens_estoque_baixo:
+            return False
+            
+        # Estrutura visual do relatório em HTML
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
+            <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px; margin-top: 0;">
+                📊 SmartLarder Pro — Relatório de Alertas Diários
+            </h2>
+            <p>Olá, Alex! Identificamos pontos de atenção no seu inventário hoje (<b>{hoje.strftime('%d/%m/%Y')}</b>):</p>
+        """
         
-        st.markdown("### 📋 Listagem de Itens")
-        st.dataframe(res.data, use_container_width=True)
+        if itens_vencendo:
+            html_content += f"""
+            <h3 style="color: #B91C1C; margin-top: 20px;">⚠️ Alertas de Validade</h3>
+            <ul style="padding-left: 20px; line-height: 1.6;">
+                {"".join(itens_vencendo)}
+            </ul>
+            """
+            
+        if itens_estoque_baixo:
+            html_content += f"""
+            <h3 style="color: #D97706; margin-top: 20px;">📉 Alertas de Estoque Mínimo</h3>
+            <ul style="padding-left: 20px; line-height: 1.6;">
+                {"".join(itens_estoque_baixo)}
+            </ul>
+            """
+            
+        html_content += """
+            <hr style="border: 0; border-top: 1px solid #e0e0e0; margin-top: 30px;">
+            <p style="font-size: 12px; color: #737373; text-align: center; margin-bottom: 0;">
+                SmartLarder Pro v2 — Gestão Inteligente e Lucrativa para seu Negócio.<br>
+                <i>Evitando o desperdício, maximizando seus lucros.</i>
+            </p>
+        </div>
+        """
+        
+        # Disparo utilizando o serviço do Resend
+        resend.Emails.send({
+            "from": "SmartLarder Pro <onboarding@resend.dev>",
+            "to": email_destino,
+            "subject": f"⚠️ Alertas de Estoque - {hoje.strftime('%d/%m/%Y')}",
+            "html": html_content
+        })
+        return True
         
     except Exception as e:
-        st.error(f"Erro ao processar alertas: {e}")
+        print(f"Erro ao processar alertas de e-mail: {e}")
+        return False
+
+# Função padrão para caso o menu lateral tente chamar show_alertas() diretamente na interface
+def show_alertas():
+    st.markdown("## 🔔 Central de Alertas")
+    st.info("Os alertas automáticos são processados em segundo plano e enviados para o seu e-mail cadastrado.")
