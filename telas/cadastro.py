@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-telas/cadastro.py — SmartLarder Pro v2 (Versão Consolidada e Adaptada ao Banco)
+telas/cadastro.py — SmartLarder Pro v2 (Versão Ultra-Defensiva)
 - Busca em cascata estável (Supabase -> Open Food Facts -> Brasil API)
 - Reatividade blindada usando chaves de Session State (Campos mudam na hora)
-- Correção de payload: Removido 'criado_por' e fixado coluna 'barcode'
+- Algoritmo de persistência recursiva/defensiva contra colunas inexistentes no Supabase
 """
 import time
 import requests
@@ -65,7 +65,6 @@ def _init_state():
     if "status_busca" not in st.session_state:
         st.session_state["status_busca"] = {}
 
-    # Defaults para os inputs do formulário
     defaults = {
         "cad_nome": "",
         "cad_categoria": "Alimentos",
@@ -88,38 +87,31 @@ def _buscar_off(codigo: str) -> dict:
     try:
         url = f"https://world.openfoodfacts.org/api/v0/product/{codigo}.json"
         r = requests.get(url, timeout=5, headers={"User-Agent": "SmartLarder-Pro/2.0"})
-        if r.status_code != 200:
-            return {}
+        if r.status_code != 200: return {}
         data = r.json()
-        if data.get("status") != 1:
-            return {}
+        if data.get("status") != 1: return {}
         p = data.get("product", {})
         nome = (p.get("product_name_pt") or p.get("product_name") or "").strip()
-        if not nome:
-            return {}
+        if not nome: return {}
         marca = (p.get("brands") or "").split(",")[0].strip()
         cats  = p.get("categories_tags") or p.get("categories") or ""
-        if isinstance(cats, list):
-            cats = " ".join(cats)
+        if isinstance(cats, list): cats = " ".join(cats)
         return {
             "nome": nome.upper(),
             "categoria": _mapear_categoria(cats),
             "fornecedor": marca.upper(),
             "_fonte": "Open Food Facts",
         }
-    except Exception:
-        return {}
+    except Exception: return {}
 
 def _buscar_brasil_api(codigo: str) -> dict:
     try:
         url = f"https://brasilapi.com.br/api/ean/v1/{codigo}"
         r = requests.get(url, timeout=5, headers={"User-Agent": "SmartLarder-Pro/2.0"})
-        if r.status_code != 200:
-            return {}
+        if r.status_code != 200: return {}
         data = r.json()
         nome = (data.get("description") or data.get("nome") or "").strip()
-        if not nome:
-            return {}
+        if not nome: return {}
         marca = (data.get("brand") or data.get("marca") or "").strip()
         cats  = data.get("category") or data.get("categoria") or ""
         return {
@@ -128,37 +120,30 @@ def _buscar_brasil_api(codigo: str) -> dict:
             "fornecedor": marca.upper(),
             "_fonte": "Brasil API",
         }
-    except Exception:
-        return {}
+    except Exception: return {}
 
-def _buscar_supabase(db, empresa_id: int, codigo: str) -> dict:
-    if not db or not codigo:
-        return {}
-    # Alinhado com o seu banco que usa a coluna 'barcode'
+def _buscar_supabase(db, empresa_id: int, code: str) -> dict:
+    if not db or not code: return {}
     for coluna in ("barcode", "codigo_barras", "codigo"):
         try:
-            res = db.table("produtos").select("*").eq(coluna, codigo).eq("empresa_id", empresa_id).limit(1).execute()
+            res = db.table("produtos").select("*").eq(coluna, code).eq("empresa_id", empresa_id).limit(1).execute()
             if res and hasattr(res, 'data') and res.data:
                 return {**res.data[0], "_fonte": "banco_local"}
-        except Exception:
-            continue
+        except Exception: continue
     return {}
 
 # ── Lógica Central do Processamento ───────────────────────────────────────────
 def _executar_busca(codigo: str, db, empresa_id: int):
     codigo = str(codigo).strip()
-    if not codigo:
-        return
+    if not codigo: return
 
     st.session_state[_K_CODIGO] = codigo
     st.session_state[_K_BUSCADO] = codigo
 
-    # 1. Tenta Banco Local
     local = _buscar_supabase(db, empresa_id, codigo)
     if local:
         st.session_state["produto_existente"] = True
         st.session_state["produto_id"] = local.get("id")
-        
         st.session_state["cad_nome"] = str(local.get("nome", "")).upper()
         st.session_state["cad_categoria"] = str(local.get("categoria", "Alimentos"))
         st.session_state["cad_fornecedor"] = str(local.get("fornecedor", "")).upper()
@@ -166,11 +151,10 @@ def _executar_busca(codigo: str, db, empresa_id: int):
         st.session_state["cad_quantidade"] = float(local.get("quantidade", 1.0))
         st.session_state["cad_unidade"] = str(local.get("unidade", "un"))
         st.session_state["cad_preco"] = float(local.get("preco_custo", 0.0) or 0.0)
-        st.session_state["cad_estoque_minimo"] = float(local.get("estoque_minimo", 0.0) or 0.0)
+        st.session_state["cad_estoque_minimo"] = float(local.get("estoque_minimo", 0.0) or local.get("quantidade_minima", 0.0) or 0.0)
         st.session_state["cad_localizacao"] = str(local.get("localizacao", ""))
         st.session_state["cad_observacoes"] = str(local.get("observacoes", ""))
         
-        # Mapeamento duplo de validade para compatibilidade com sua tabela
         v_data = local.get("validade") or local.get("data_validade")
         if v_data:
             try: st.session_state["cad_validade"] = date.fromisoformat(v_data)
@@ -180,19 +164,16 @@ def _executar_busca(codigo: str, db, empresa_id: int):
         st.session_state[_K_FORM_ID] += 1
         return
 
-    # 2. Tenta Open Food Facts
     off = _buscar_off(codigo)
     if off:
         _aplicar_dados_externos(off)
         return
 
-    # 3. Tenta Brasil API
     br = _buscar_brasil_api(codigo)
     if br:
         _aplicar_dados_externos(br)
         return
 
-    # Caso não encontre em lugar nenhum
     st.session_state["produto_existente"] = False
     st.session_state["produto_id"] = None
     st.session_state["cad_nome"] = ""
@@ -213,7 +194,6 @@ def _aplicar_dados_externos(res_api: dict):
     st.session_state["cad_nome"] = res_api["nome"]
     st.session_state["cad_categoria"] = res_api["categoria"]
     st.session_state["cad_fornecedor"] = res_api["fornecedor"]
-    
     st.session_state["cad_lote"] = ""
     st.session_state["cad_quantidade"] = 1.0
     st.session_state["cad_preco"] = 0.0
@@ -221,7 +201,6 @@ def _aplicar_dados_externos(res_api: dict):
     st.session_state["cad_localizacao"] = ""
     st.session_state["cad_observacoes"] = ""
     st.session_state["cad_validade"] = date.today()
-    
     st.session_state["status_busca"] = {"tipo": "success", "msg": f"🌐 Encontrado via {res_api['_fonte']}: {res_api['nome']}"}
     st.session_state[_K_FORM_ID] += 1
 
@@ -285,7 +264,7 @@ def show_cadastro():
     st.markdown("---")
     st.markdown("### 📝 Dados do Produto")
 
-    with st.form(key=f"form_cadastro_produto_v4_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
+    with st.form(key=f"form_cadastro_produto_v5_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
             st.text_input("Nome do Produto *", key="cad_nome")
@@ -314,10 +293,8 @@ def show_cadastro():
         qtd_val = st.session_state["cad_quantidade"]
 
         erros = []
-        if not nome_val:
-            erros.append("Nome do produto é obrigatório.")
-        if qtd_val <= 0:
-            erros.append("Quantidade deve ser maior que zero.")
+        if not nome_val: erros.append("Nome do produto é obrigatório.")
+        if qtd_val <= 0: erros.append("Quantidade deve ser maior que zero.")
 
         if erros:
             for e in erros: st.error(f"❌ {e}")
@@ -343,13 +320,13 @@ def show_cadastro():
             },
         )
 
-# ── Persistência Alinhada e Segura com Supabase ────────────────────────────────
+# ── Persistência Inteligente e Recursiva (Sem Erros de Coluna) ────────────────
 def _salvar_produto(db, empresa_id, user_id, dados: dict):
     if not db:
         st.error("❌ Sem conexão com o banco de dados.")
         return
 
-    # Montando apenas com campos REAIS que existem no seu banco
+    # Payload inicial super otimista
     payload = {
         "nome": dados["nome"].upper(),
         "categoria": dados["categoria"],
@@ -358,21 +335,27 @@ def _salvar_produto(db, empresa_id, user_id, dados: dict):
         "preco_custo": float(dados["preco_custo"]),
         "empresa_id": int(empresa_id),
         "user_id": int(user_id),
-        "estoque_minimo": float(dados["estoque_min"]),
-        "data_validade": dados["validade"],  # Mapeando para as duas possibilidades
-        "validade": dados["validade"],
         "lote": dados["lote"],
         "fornecedor": dados["fornecedor"],
         "localizacao": dados["localizacao"],
-        "observacoes": dados["observacoes"]
+        "observacoes": dados["observacoes"],
+        "barcode": dados.get("codigo_input", "").strip() or None,
+        
+        # Mapeamos os nomes possíveis para colunas duvidosas
+        "estoque_minimo": float(dados["estoque_min"]),
+        "quantidade_minima": float(dados["estoque_min"]),
+        "data_validade": dados["validade"],
+        "validade": dados["validade"]
     }
 
-    codigo = dados.get("codigo_input", "").strip()
-    
-    # Injeta o código na coluna certa mapeada pelo seu log ('barcode')
-    if codigo:
-        payload["barcode"] = codigo
+    # Executa o loop de inserção inteligente
+    _executar_persistencia_defensiva(db, payload)
 
+def _executar_persistencia_defensiva(db, payload: dict):
+    """
+    Tenta salvar. Se o Supabase rejeitar por coluna inexistente, o código
+    identifica qual coluna falhou, remove do payload e tenta de novo!
+    """
     try:
         if st.session_state["produto_existente"] and st.session_state["produto_id"]:
             res = db.table("produtos").update(payload).eq("id", st.session_state["produto_id"]).execute()
@@ -384,7 +367,7 @@ def _salvar_produto(db, empresa_id, user_id, dados: dict):
             st.balloons()
             time.sleep(1)
             
-            # Limpeza completa para o próximo cadastro
+            # Reset completo pós salvamento bem-sucedido
             st.session_state[_K_CODIGO] = ""
             st.session_state[_K_BUSCADO] = ""
             st.session_state["status_busca"] = {}
@@ -395,12 +378,36 @@ def _salvar_produto(db, empresa_id, user_id, dados: dict):
                 if k in st.session_state: del st.session_state[k]
             st.session_state[_K_FORM_ID] += 1
             st.rerun()
+            return
+
     except Exception as e:
         msg = str(e).lower()
+        
+        # Se o erro for de coluna inexistente (PGRST204 ou string 'column')
+        if "column" in msg or "not find" in msg or "schema cache" in msg:
+            # Tenta descobrir o nome da coluna dentro das aspas simples da mensagem do Supabase
+            import re
+            match = re.search(r"'(.*?)'", msg)
+            if match:
+                coluna_errada = match.group(1)
+                if coluna_errada in payload:
+                    st.warning(f"⚠️ Ignorando coluna '{coluna_errada}' (não localizada no banco de dados).")
+                    del payload[coluna_errada]
+                    # Roda de novo recursivamente sem a coluna errada!
+                    _executar_persistencia_defensiva(db, payload)
+                    return
+            
+            # Fallback caso não ache as aspas: remove as mais perigosas conhecidas
+            for col in ["estoque_minimo", "quantidade_minima", "data_validade", "validade"]:
+                if col in payload:
+                    del payload[col]
+                    _executar_persistencia_defensiva(db, payload)
+                    return
+
         if "duplicate" in msg or "unique" in msg:
-            st.warning("⚠️ Um produto com este código de barras já está registrado.")
+            st.warning("⚠️ Um produto com este código de barras já se encontra registrado.")
         else:
-            st.error(f"❌ Falha ao salvar no Supabase: {e}")
+            st.error(f"❌ Erro crítico no Supabase: {e}")
 
 def _decodificar_imagem(imagem_bytes: bytes) -> str:
     try:
@@ -410,5 +417,4 @@ def _decodificar_imagem(imagem_bytes: bytes) -> str:
         img = Image.open(io.BytesIO(imagem_bytes))
         codigos = pyzbar_decode(img)
         return codigos[0].data.decode("utf-8").strip() if codigos else ""
-    except Exception:
-        return ""
+    except Exception: return ""
