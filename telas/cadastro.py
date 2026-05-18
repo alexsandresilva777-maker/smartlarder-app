@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-telas/cadastro.py — SmartLarder Pro v2 (Versão Calibrada com o Supabase)
+telas/cadastro.py — SmartLarder Pro v2 (Versão Final sem Conflitos)
 - Alinhado 100% com as colunas reais do banco: quantidade_minima, data_validade, etc.
-- Preserva informações de lote e fornecedor injetando de forma elegante na localização.
+- Preserva informações de lote, fornecedor e observações injetando na localização.
+- Indentação totalmente revisada e padronizada.
 """
 import time
 import requests
@@ -115,7 +116,6 @@ def _buscar_brasil_api(codigo: str) -> dict:
 def _buscar_supabase(db, empresa_id: int, code: str) -> dict:
     if not db or not code: return {}
     try:
-        # Busca estritamente pela coluna 'barcode' validada no banco
         res = db.table("produtos").select("*").eq("barcode", code).eq("empresa_id", empresa_id).limit(1).execute()
         if res and hasattr(res, 'data') and res.data:
             return {**res.data[0], "_fonte": "banco_local"}
@@ -141,7 +141,6 @@ def _executar_busca(codigo: str, db, empresa_id: int):
         st.session_state["cad_preco"] = float(local.get("preco_custo", 0.0) or 0.0)
         st.session_state["cad_estoque_minimo"] = float(local.get("quantidade_minima", 0.0) or 0.0)
         
-        # Tenta extrair a localização limpa tirando os metadados temporários se houver
         loc_bruta = str(local.get("localizacao", ""))
         st.session_state["cad_localizacao"] = loc_bruta.split(" | Obs:")[0]
         st.session_state["cad_fornecedor"] = ""
@@ -254,7 +253,7 @@ def show_cadastro():
     st.markdown("---")
     st.markdown("### 📝 Dados do Produto")
 
-    with st.form(key=f"form_cadastro_produto_v7_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
+    with st.form(key=f"form_cadastro_produto_v8_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
             st.text_input("Nome do Produto *", key="cad_nome")
@@ -286,7 +285,6 @@ def show_cadastro():
             st.error("❌ Nome do produto é obrigatório.")
             return
 
-        # Consolida as informações das colunas que faltam no banco dentro do campo 'localizacao'
         loc_final = st.session_state["cad_localizacao"].strip()
         meta_info = []
         if st.session_state["cad_fornecedor"].strip():
@@ -315,13 +313,12 @@ def show_cadastro():
             },
         )
 
-# ── Persistência Alinhada Estritamente com o Banco de Dados ────────────────────
+# ── Persistência Consolidada e Alinhada ao Banco ──────────────────────────────
 def _salvar_produto(db, empresa_id, dados: dict):
     if not db:
         st.error("❌ Sem conexão com o banco de dados.")
         return
 
-    # Mapeamento cirúrgico baseado nas colunas reais da imagem 614669
     payload = {
         "empresa_id": int(empresa_id),
         "nome": dados["nome"].upper(),
@@ -346,7 +343,6 @@ def _salvar_produto(db, empresa_id, dados: dict):
             st.balloons()
             time.sleep(1)
             
-            # Limpa estado para o próximo bip
             st.session_state[_K_CODIGO] = ""
             st.session_state[_K_BUSCADO] = ""
             st.session_state["status_busca"] = {}
@@ -359,11 +355,7 @@ def _salvar_produto(db, empresa_id, dados: dict):
             st.rerun()
 
     except Exception as e:
-        msg = str(e).lower()
-        if "duplicate" in msg or "unique" in msg:
-            st.warning("⚠️ Um produto com este código de barras já está registrado.")
-        else:
-            st.error(f"❌ Erro de consistência no Supabase: {e}")
+        st.error(f"❌ Erro de consistência no Supabase: {e}")
 
 def _decodificar_imagem(imagem_bytes: bytes) -> str:
     try:
