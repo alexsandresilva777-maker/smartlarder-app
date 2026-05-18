@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-telas/cadastro.py — SmartLarder Pro v2 (Versão Consolidada e Segura)
-- Mantém TODOS os campos cruciais (Preço, Fornecedor, Validade, Estoque)
-- Correção definitiva de chaves do dicionário para evitar falhas no Supabase
+telas/cadastro.py — SmartLarder Pro v2 (Versão Calibrada com o Supabase)
+- Alinhado 100% com as colunas reais do banco: quantidade_minima, data_validade, etc.
+- Preserva informações de lote e fornecedor injetando de forma elegante na localização.
 """
 import time
 import requests
 import streamlit as st
-import re
 from datetime import date
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -116,6 +115,7 @@ def _buscar_brasil_api(codigo: str) -> dict:
 def _buscar_supabase(db, empresa_id: int, code: str) -> dict:
     if not db or not code: return {}
     try:
+        # Busca estritamente pela coluna 'barcode' validada no banco
         res = db.table("produtos").select("*").eq("barcode", code).eq("empresa_id", empresa_id).limit(1).execute()
         if res and hasattr(res, 'data') and res.data:
             return {**res.data[0], "_fonte": "banco_local"}
@@ -136,16 +136,19 @@ def _executar_busca(codigo: str, db, empresa_id: int):
         st.session_state["produto_id"] = local.get("id")
         st.session_state["cad_nome"] = str(local.get("nome", "")).upper()
         st.session_state["cad_categoria"] = str(local.get("categoria", "Alimentos"))
-        st.session_state["cad_fornecedor"] = str(local.get("fornecedor", "") or local.get("marca", "")).upper()
-        st.session_state["cad_lote"] = str(local.get("lote", ""))
         st.session_state["cad_quantidade"] = float(local.get("quantidade", 1.0))
         st.session_state["cad_unidade"] = str(local.get("unidade", "un"))
-        st.session_state["cad_preco"] = float(local.get("preco_custo", 0.0) or local.get("preco", 0.0) or 0.0)
-        st.session_state["cad_estoque_minimo"] = float(local.get("estoque_minimo", 0.0) or local.get("quantidade_minima", 0.0) or 0.0)
-        st.session_state["cad_localizacao"] = str(local.get("localizacao", ""))
-        st.session_state["cad_observacoes"] = str(local.get("observacoes", ""))
+        st.session_state["cad_preco"] = float(local.get("preco_custo", 0.0) or 0.0)
+        st.session_state["cad_estoque_minimo"] = float(local.get("quantidade_minima", 0.0) or 0.0)
         
-        v_data = local.get("validade") or local.get("data_validade")
+        # Tenta extrair a localização limpa tirando os metadados temporários se houver
+        loc_bruta = str(local.get("localizacao", ""))
+        st.session_state["cad_localizacao"] = loc_bruta.split(" | Obs:")[0]
+        st.session_state["cad_fornecedor"] = ""
+        st.session_state["cad_lote"] = ""
+        st.session_state["cad_observacoes"] = ""
+        
+        v_data = local.get("data_validade")
         if v_data:
             try: st.session_state["cad_validade"] = date.fromisoformat(v_data)
             except Exception: st.session_state["cad_validade"] = date.today()
@@ -200,7 +203,6 @@ def show_cadastro():
 
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
-    user_id = st.session_state.get("user_id", 1)
 
     st.markdown("## ➕ Cadastrar Produto")
     st.markdown("### 🔍 Código de Barras (EAN)")
@@ -252,7 +254,7 @@ def show_cadastro():
     st.markdown("---")
     st.markdown("### 📝 Dados do Produto")
 
-    with st.form(key=f"form_cadastro_produto_v6_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
+    with st.form(key=f"form_cadastro_produto_v7_{st.session_state[_K_FORM_ID]}", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
             st.text_input("Nome do Produto *", key="cad_nome")
@@ -284,50 +286,53 @@ def show_cadastro():
             st.error("❌ Nome do produto é obrigatório.")
             return
 
+        # Consolida as informações das colunas que faltam no banco dentro do campo 'localizacao'
+        loc_final = st.session_state["cad_localizacao"].strip()
+        meta_info = []
+        if st.session_state["cad_fornecedor"].strip():
+            meta_info.append(f"Forn: {st.session_state['cad_fornecedor'].strip()}")
+        if st.session_state["cad_lote"].strip():
+            meta_info.append(f"Lote: {st.session_state['cad_lote'].strip()}")
+        if st.session_state["cad_observacoes"].strip():
+            meta_info.append(f"Obs: {st.session_state['cad_observacoes'].strip()}")
+        
+        if meta_info:
+            loc_final += " | " + " - ".join(meta_info)
+
         _salvar_produto(
             db=db,
             empresa_id=empresa_id,
-            user_id=user_id,
             dados={
                 "barcode": st.session_state[_K_CODIGO],
                 "nome": nome_val,
                 "categoria": st.session_state["cad_categoria"],
                 "quantidade": qtd_val,
                 "unidade": st.session_state["cad_unidade"],
-                "validade": str(st.session_state["cad_validade"]),
-                "lote": st.session_state["cad_lote"].strip() or None,
-                "fornecedor": st.session_state["cad_fornecedor"].strip() or None,
-                "localizacao": st.session_state["cad_localizacao"].strip() or None,
+                "data_validade": str(st.session_state["cad_validade"]),
+                "localizacao": loc_final if loc_final else None,
                 "preco_custo": st.session_state["cad_preco"],
-                "estoque_minimo": st.session_state["cad_estoque_minimo"],
-                "observacoes": st.session_state["cad_observacoes"].strip() or None,
+                "quantidade_minima": st.session_state["cad_estoque_minimo"]
             },
         )
 
-# ── Persistência Consolidada com Mapeamento Fixo ──────────────────────────────
-def _salvar_produto(db, empresa_id, user_id, dados: dict):
+# ── Persistência Alinhada Estritamente com o Banco de Dados ────────────────────
+def _salvar_produto(db, empresa_id, dados: dict):
     if not db:
         st.error("❌ Sem conexão com o banco de dados.")
         return
 
-    # Payload estrito mapeando exatamente o que o seu banco espera receber
+    # Mapeamento cirúrgico baseado nas colunas reais da imagem 614669
     payload = {
+        "empresa_id": int(empresa_id),
         "nome": dados["nome"].upper(),
         "categoria": dados["categoria"],
         "quantidade": float(dados["quantidade"]),
+        "quantidade_minima": float(dados["quantidade_minima"]),
         "unidade": dados["unidade"],
-        "empresa_id": int(empresa_id),
-        "user_id": int(user_id),
-        "lote": dados["lote"],
-        "localizacao": dados["localizacao"],
-        "observacoes": dados["observacoes"],
-        "barcode": dados.get("barcode", "").strip() or None,
-        
-        # Mapeamentos corretos de preço, estoque e fornecedor validados
         "preco_custo": float(dados["preco_custo"]),
-        "estoque_minimo": float(dados["estoque_minimo"]),
-        "fornecedor": dados["fornecedor"],
-        "validade": dados["validade"]
+        "localizacao": dados["localizacao"],
+        "data_validade": dados["data_validade"],
+        "barcode": dados.get("barcode", "").strip() or None
     }
 
     try:
@@ -337,11 +342,11 @@ def _salvar_produto(db, empresa_id, user_id, dados: dict):
             res = db.table("produtos").insert(payload).execute()
 
         if res and hasattr(res, 'data') and res.data:
-            st.success(f"🎉 **{payload.get('nome')}** salvo com sucesso!")
+            st.success(f"🎉 **{payload.get('nome')}** gravado com sucesso no Supabase!")
             st.balloons()
             time.sleep(1)
             
-            # Limpa para a próxima entrada
+            # Limpa estado para o próximo bip
             st.session_state[_K_CODIGO] = ""
             st.session_state[_K_BUSCADO] = ""
             st.session_state["status_busca"] = {}
@@ -356,9 +361,9 @@ def _salvar_produto(db, empresa_id, user_id, dados: dict):
     except Exception as e:
         msg = str(e).lower()
         if "duplicate" in msg or "unique" in msg:
-            st.warning("⚠️ Um produto com este código de barras já se encontra registrado.")
+            st.warning("⚠️ Um produto com este código de barras já está registrado.")
         else:
-            st.error(f"❌ Erro ao salvar no Supabase: {e}")
+            st.error(f"❌ Erro de consistência no Supabase: {e}")
 
 def _decodificar_imagem(imagem_bytes: bytes) -> str:
     try:
