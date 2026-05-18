@@ -42,7 +42,7 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
             unidade = p.get("unidade", "un")
             
             # 📉 Análise de Estoque Mínimo
-            if qtd <= qtd_min:
+            if qtd > 0:
                 itens_estoque_baixo.append(
                     f"<li>❌ <b>{nome}</b>: Estoque atual em {qtd:.2f} {unidade} (Mínimo: {qtd_min:.2f} {unidade})</li>"
                 )
