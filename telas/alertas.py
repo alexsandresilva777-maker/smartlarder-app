@@ -22,7 +22,7 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
         return False
     
     hoje = date.today()
-    limite_validade = hoje + timedelta(days=365) # Alerta para vencimentos nos próximos 15 dias
+    limite_validade = hoje + timedelta(days=15) # Alerta para vencimentos nos próximos 15 dias
     
     try:
         # Busca estrita pelos produtos vinculados à empresa logada
@@ -42,7 +42,7 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
             unidade = p.get("unidade", "un")
             
             # 📉 Análise de Estoque Mínimo
-            if qtd > 0:
+            if qtd <= qtd_min:
                 itens_estoque_baixo.append(
                     f"<li>❌ <b>{nome}</b>: Estoque atual em {qtd:.2f} {unidade} (Mínimo: {qtd_min:.2f} {unidade})</li>"
                 )
