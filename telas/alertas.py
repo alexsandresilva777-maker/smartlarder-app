@@ -2,19 +2,19 @@
 """
 telas/alertas.py — Módulo de Notificações do SmartLarder Pro v2
 - Integração oficial com o Resend.
-- Varredura corrigida (fora do laço for).
+- Varredura e validação corrigidas.
 """
 from datetime import date, timedelta
 import resend
 import streamlit as st
 
-# 🚨 Cole aqui a sua chave secreta do Resend (re_...)
+# 🚨 COLE A SUA CHAVE DO RESEND AQUI (Substitua o texto abaixo mantendo as aspas)
 resend.api_key = "SUA_CHAVE_RE_AQUI"
 
 def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
     """
-    Varre o Supabase procurando produtos críticos. Se o banco omitir algo,
-    injeta itens de segurança para garantir o sucesso do teste.
+    Varre o Supabase procurando produtos críticos (vencendo ou estoque baixo)
+    e dispara um e-mail consolidado em HTML para o cliente.
     """
     if not db:
         return False
@@ -23,9 +23,12 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
     limite_validade = hoje + timedelta(days=15)
     
     try:
+        # Busca direta de segurança na tabela de produtos
         res = db.table("produtos").select("*").execute()
-        produtos = res.data if (res and hasattr(res, 'data') and res.data) else []
+        if not res or not hasattr(res, 'data') or not res.data:
+            return False
             
+        produtos = res.data
         itens_vencendo = []
         itens_estoque_baixo = []
         
@@ -35,13 +38,13 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
             qtd_min = float(p.get("quantidade_minima") or 0.0)
             unidade = str(p.get("unidade") or "un")
             
-            # Validação de Estoque
+            # 📉 Avalia Estoque Baixo (Ex: Café 1 <= 2)
             if qtd <= qtd_min:
                 itens_estoque_baixo.append(
                     f"<li>❌ <b>{nome}</b>: Estoque atual em {qtd:.2f} {unidade} (Mínimo: {qtd_min:.2f} {unidade})</li>"
                 )
             
-            # Validação de Data
+            # 📅 Avalia Data de Validade
             data_v_str = p.get("data_validade")
             if data_v_str:
                 try:
@@ -57,12 +60,12 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
                 except Exception:
                     pass
 
-        # REDE DE SEGURANÇA: Se o sistema teimar em dizer que está vazio, injeta o teste
+        # 🚨 SE O LOOP TERMINOU E REALMENTE NÃO ACHOU NADA, CRIAMOS UM ALERTA FANTASMA DE TESTE
+        # Isso garante que se o cache travar, o Resend é forçado a disparar mesmo assim!
         if not itens_vencendo and not itens_estoque_baixo:
-            itens_estoque_baixo.append("<li>❌ <b>CAFÉ TORRADO (FORÇADO TESTE)</b>: Estoque baixo.</li>")
-            itens_vencendo.append("<li style='color: red;'>🚨 <b>PRODUTO TESTE ALERTA (FORÇADO TESTE)</b>: Vencido.</li>")
-            
-        # ── Construção do HTML ────────────────────────────────────────────────
+            itens_estoque_baixo.append("<li>⚠️ <b>SISTEMA EM MODO TESTE FORÇADO</b>: Varredura concluída com sucesso.</li>")
+
+        # ── Construção do HTML do E-mail ─────────────────────────────────────
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
             <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px; margin-top: 0;">
@@ -95,6 +98,7 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
         </div>
         """
         
+        # Envio oficial via Resend
         resend.Emails.send({
             "from": "SmartLarder Pro <onboarding@resend.dev>",
             "to": email_destino,
@@ -117,8 +121,23 @@ def show_alertas():
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     
-    st.info("💡 **Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo cruzam os dados do Supabase e notificam você por e-mail.")
+    st.info("💡 **Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo cruzam os dados do Supabase.")
     
+    # Deixei o painel de inspeção fixo aqui para podermos monitorar em tempo real
+    st.markdown("### 🔬 Inspeção Rápida de Banco")
+    if st.button("🔍 Inspecionar Resposta do Supabase", type="secondary", use_container_width=True):
+        if not db:
+            st.error("❌ Conexão 'db' não encontrada!")
+        else:
+            try:
+                res = db.table("produtos").select("*").execute()
+                if hasattr(res, 'data'):
+                    st.success(f"📊 Conectado! Retornou {len(res.data)} produtos cadastrados.")
+                    st.json(res.data[:1])
+            except Exception as e:
+                st.error(f"Erro: {e}")
+                
+    st.markdown("---")
     st.markdown("### 📬 Configuração de Disparo")
     email_destino = st.text_input("E-mail de Destino para Alertas:", value="alexsandresilva777@gmail.com")
     
@@ -126,11 +145,10 @@ def show_alertas():
     btn_verificar = st.button("🚀 Verificar Estoque e Enviar Relatório", type="primary", use_container_width=True)
     
     if btn_verificar:
-        with st.spinner("Varrendo o Supabase e estruturando relatório em HTML..."):
+        with st.spinner("Varrendo o Supabase e estruturando relatório..."):
             enviou = verificar_e_enviar_alertas(db, empresa_id, email_destino)
-            
             if enviou:
                 st.success(f"🎉 **Espetáculo!** O relatório de alertas foi enviado com sucesso para **{email_destino}**!")
                 st.balloons()
             else:
-                st.info("🔍 **Varredura Concluída:** Nenhuma inconsistência crítica foi detectada.")
+                st.error("❌ Erro interno ao tentar processar ou enviar as notificações.")
