@@ -130,7 +130,7 @@ elif page == "Alertas":
             import resend
             
             # Substitua as aspas abaixo pela sua chave token real (re_...)
-            resend.api_key = "SUA_CHAVE_RE_AQUI"
+            resend.api_key = st.secrets.get("RESEND_KEY", "re_WAGXgUKp_FqFwvS7zBAB5Q2o8NbYwrfFR")
             hoje = date.today()
             limite_validade = hoje + timedelta(days=15)
             
