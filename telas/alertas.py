@@ -8,7 +8,7 @@ from datetime import date, timedelta
 import resend
 import streamlit as st
 
-# Configuração da sua chave do Resend (Mantenha a sua chave original aqui)
+# Configuração da sua chave do Resend (Substitua pela sua re_...)
 resend.api_key = "SUA_CHAVE_RE_AQUI"
 
 def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
@@ -23,7 +23,7 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
     limite_validade = hoje + timedelta(days=15)
     
     try:
-        # Busca direta de segurança na tabela de produtos
+        # Busca direta na tabela de produtos
         res = db.table("produtos").select("*").execute()
         if not res or not hasattr(res, 'data') or not res.data:
             return False
@@ -33,28 +33,25 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
         itens_estoque_baixo = []
         
         for p in produtos:
-            nome = str(p.get("nome") or p.get("NOME") or "PRODUTO SEM NOME").upper()
-            qtd = float(p.get("quantidade") or p.get("QUANTIDADE") or 0.0)
-            qtd_min = float(p.get("quantidade_minima") or p.get("QUANTIDADE_MINIMA") or p.get("qtd_minima") or 0.0)
-            unidade = str(p.get("unidade") or p.get("UNIDADE") or "un")
+            nome = str(p.get("nome") or "PRODUTO SEM NOME").upper()
+            qtd = float(p.get("quantidade") or 0.0)
+            qtd_min = float(p.get("quantidade_minima") or 0.0)
+            unidade = str(p.get("unidade") or "un")
             
-            # Força o seu "PRODUTO TESTE ALERTA" a entrar, ou valida a regra padrão
-            if qtd <= qtd_min or "TESTE" in nome:
+            # 📉 Avalia Estoque Baixo (Ex: Café: 1 <= 2 -> Entra aqui!)
+            if qtd <= qtd_min:
                 itens_estoque_baixo.append(
                     f"<li>❌ <b>{nome}</b>: Estoque atual em {qtd:.2f} {unidade} (Mínimo: {qtd_min:.2f} {unidade})</li>"
                 )
             
-            data_v_str = p.get("data_validade") or p.get("validade") or p.get("DATA_VALIDADE")
+            # 📅 Avalia Data de Validade
+            data_v_str = p.get("data_validade")
             if data_v_str:
                 try:
-                    if isinstance(data_v_str, str):
-                        data_v = date.fromisoformat(data_v_str.split(" ")[0])
-                    else:
-                        data_v = data_v_str
-                        
-                    if data_v <= hoje or "TESTE" in nome:
+                    data_v = date.fromisoformat(data_v_str.split(" ")[0])
+                    if data_v <= hoje:
                         itens_vencendo.append(
-                            f"<li style='color: red;'>🚨 <b>{nome}</b>: <b>VENCIDO</b> em {data_v.strftime('%d/%m/%Y')}</li>"
+                            f"<li style='color: red;'>🚨 <b>{nome}</b>: <b>VENCIDO/CRÍTICO</b> em {data_v.strftime('%d/%m/%Y')}</li>"
                         )
                     elif data_v <= limite_validade:
                         itens_vencendo.append(
@@ -63,9 +60,12 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
                 except Exception:
                     pass
 
+        # ATENÇÃO: Essa checagem agora está FORA do loop 'for'. 
+        # Só para o programa se REALMENTE não houver nada crítico em nenhum dos 32 itens.
         if not itens_vencendo and not itens_estoque_baixo:
             return False
             
+        # ── Construção do Corpo do E-mail ─────────────────────────────────────
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
             <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px; margin-top: 0;">
@@ -93,11 +93,12 @@ def verificar_e_enviar_alertas(db, empresa_id: int, email_destino: str):
         html_content += """
             <hr style="border: 0; border-top: 1px solid #e0e0e0; margin-top: 30px;">
             <p style="font-size: 12px; color: #737373; text-align: center; margin-bottom: 0;">
-                SmartLarder Pro v2 — Gestão Inteligente e Lucrativa para seu Negócio.
+                SmartLarder Pro v2 — Gestão Inteligente para seu Negócio.
             </p>
         </div>
         """
         
+        # Envio oficial usando o provedor Resend
         resend.Emails.send({
             "from": "SmartLarder Pro <onboarding@resend.dev>",
             "to": email_destino,
@@ -120,28 +121,9 @@ def show_alertas():
     db = st.session_state.get("db")
     empresa_id = st.session_state.get("empresa_id", 1)
     
-    st.info("💡 **Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo cruzam os dados do Supabase e notificam você por e-mail antes do prejuízo acontecer.")
+    st.info("💡 **Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo cruzam os dados do Supabase e notificam você por e-mail.")
     
-    st.markdown("### 🔬 Modo Inspeção")
-    
-    # Botão de Teste Rápido direto na tela para garantir que o banco está lendo
-    if st.button("🔍 Inspecionar Resposta do Supabase", type="secondary", use_container_width=True):
-        if not db:
-            st.error("❌ Conexão 'db' não encontrada na sessão!")
-        else:
-            try:
-                res = db.table("produtos").select("*").execute()
-                if hasattr(res, 'data'):
-                    st.success(f"📊 Banco Conectado! Retornou `{len(res.data)}` produtos cadastrados.")
-                    st.json(res.data[:2]) # Mostra a estrutura dos 2 primeiros itens
-                else:
-                    st.warning("Banco respondeu, mas não trouxe a chave '.data'.")
-            except Exception as e:
-                st.error(f"Erro ao ler tabela: {e}")
-
-    st.markdown("---")
     st.markdown("### 📬 Configuração de Disparo")
-    
     email_destino = st.text_input("E-mail de Destino para Alertas:", value="alexsandresilva777@gmail.com")
     
     st.markdown(" ")
