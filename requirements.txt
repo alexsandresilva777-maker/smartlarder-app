@@ -8,3 +8,5 @@ Pillow
 supabase
 streamlit-cookies-manager-v2
 resend
+
+ 
