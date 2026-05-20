@@ -109,16 +109,20 @@ elif page == "Lista de Compras":
     from telas.lista_compras import show_lista_compras; _load(show_lista_compras)
 
 elif page == "Alertas":
-    # ── MÓDULO EMBUTIDO DIRETO CONTRA CACHE DO SERVIDOR ─────────────────
+    # ── MÓDULO DE ALERTAS DINÂMICO E ESCALÁVEL ─────────────────────────
     st.markdown("## 🔔 Central de Alertas Ativos")
     st.markdown("---")
     
     db = st.session_state.get("db")
-    empresa_id = st.session_state.get("empresa_id", 1)
     
-    st.info("💡 **Monitoramento Operacional:** Os relatórios diários de validade e estoque mínimo cruzam os dados do Supabase e notificam você por e-mail.")
+    # Captura dos dados do usuário atual conectado na sessão
+    empresa_id = st.session_state.get("empresa_id", 1)
+    usuario_logado = st.session_state.get("nome_completo", "Usuário")
+    
+    st.info(f"💡 Olá, {usuario_logado}! Os relatórios diários de validade e estoque mínimo cruzam os dados da sua empresa (ID: {empresa_id}) e notificam você por e-mail.")
     
     st.markdown("### 📬 Configuração de Disparo")
+    # Mantém o seu e-mail como padrão de segurança para o teste inicial
     email_destino = st.text_input("E-mail de Destino para Alertas:", value="alexsandresilva777@gmail.com")
     
     st.markdown(" ")
@@ -129,13 +133,14 @@ elif page == "Alertas":
             from datetime import date, timedelta
             import resend
             
-            # Substitua as aspas abaixo pela sua chave token real (re_...)
-            resend.api_key = st.secrets.get("RESEND_KEY", "re_WAGXgUKp_FqFwvS7zBAB5Q2o8NbYwrfFR")
+            # Puxa de forma segura a chave salva nas Secrets do Streamlit
+            resend.api_key = st.secrets.get("RESEND_KEY", "SUA_CHAVE_RE_AQUI")
             hoje = date.today()
             limite_validade = hoje + timedelta(days=15)
             
             try:
-                res = db.table("produtos").select("*").execute()
+                # Filtragem inteligente: O banco agora só traz os dados pertencentes à empresa logada
+                res = db.table("produtos").select("*").eq("empresa_id", empresa_id).execute()
                 produtos = res.data if (res and hasattr(res, 'data') and res.data) else []
                 
                 itens_vencendo = []
@@ -147,13 +152,13 @@ elif page == "Alertas":
                     qtd_min = float(p.get("quantidade_minima") or 0.0)
                     unidade = str(p.get("unidade") or "un")
                     
-                    # 📉 Analisa Estoque Mínimo
+                    # 📉 Verificação de Estoque Mínimo
                     if qtd <= qtd_min:
                         itens_estoque_baixo.append(
                             f"<li>❌ <b>{nome}</b>: Estoque atual em {qtd:.2f} {unidade} (Mínimo: {qtd_min:.2f} {unidade})</li>"
                         )
                     
-                    # 📅 Analisa Validade
+                    # 📅 Verificação de Validade
                     data_v_str = p.get("data_validade")
                     if data_v_str:
                         try:
@@ -168,17 +173,17 @@ elif page == "Alertas":
                                 )
                         except: pass
 
-                # Rede de segurança caso o banco retorne falso-positivo vazio
+                # Rede de segurança: caso o usuário não tenha nada crítico, injeta uma notificação de sucesso
                 if not itens_vencendo and not itens_estoque_baixo:
-                    itens_estoque_baixo.append("<li>⚠️ <b>MODO DE TESTE FORÇADO</b>: Varredura executada sem erros no loop principal.</li>")
+                    itens_estoque_baixo.append("<li>⚠️ <b>MONITORAMENTO DIÁRIO</b>: Todos os itens do seu inventário estão em conformidade operacional hoje.</li>")
                 
-                # Montagem do Layout HTML do E-mail
+                # Montagem do Layout HTML do E-mail customizado com o nome do cliente
                 html_content = f"""
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px;">
                     <h2 style="color: #1E3A8A; border-bottom: 2px solid #1E3A8A; padding-bottom: 10px; margin-top: 0;">
                         📊 SmartLarder Pro — Relatório de Alertas Diários
                     </h2>
-                    <p>Olá, Alex! Identificamos pontos de atenção no seu inventário hoje (<b>{hoje.strftime('%d/%m/%Y')}</b>):</p>
+                    <p>Olá, <b>{usuario_logado}</b>! Identificamos os seguintes pontos de atenção no seu inventário hoje (<b>{hoje.strftime('%d/%m/%Y')}</b>):</p>
                 """
                 if itens_vencendo:
                     html_content += f"<h3 style='color: #B91C1C; margin-top: 20px;'>⚠️ Alertas de Validade</h3><ul style='padding-left: 20px; line-height: 1.6;'>{''.join(itens_vencendo)}</ul>"
