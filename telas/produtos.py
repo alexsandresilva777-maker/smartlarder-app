@@ -138,7 +138,7 @@ def show_produtos():
 
     valor_total = sum((p.get("preco_custo") or 0) * float(p.get("quantidade", 0) or 0) for p in produtos)
     st.markdown(
-        f"**{len(produtos)} produto(s)** · "
+        f"**{len(produtos)} product(s)** · "
         f"Valor filtrado: **{_fmt_brl(valor_total)}**"
     )
 
@@ -163,7 +163,6 @@ def show_produtos():
                     f"{p.get('barcode') or '—'} · {p.get('categoria', 'Outros')}"
                     f"{' · 📍 '+p['localizacao'] if p.get('localizacao') else ''}"
                     f"</span></div>",
-                    document.getElementsByTagName('head')[0] if False else None, # Linha de segurança
                     unsafe_allow_html=True,
                 )
             with c2:
@@ -230,7 +229,6 @@ def _form_edicao(supabase, p, empresa_id):
             categoria  = st.selectbox("Categoria", CATEGORIAS,
                                       index=CATEGORIAS.index(p["categoria"]) if p.get("categoria") in CATEGORIAS else 0)
         with c2:
-            # Configurado como float para aceitar quilos/litros fracionados, mas aceitando perfeitamente o 0.0
             quantidade = st.number_input("Quantidade", value=float(p.get("quantidade", 0.0) or 0.0), min_value=0.0, step=0.1)
             unidade    = st.selectbox("Unidade", UNIDADES,
                                       index=UNIDADES.index(p["unidade"]) if p.get("unidade") in UNIDADES else 0)
@@ -260,8 +258,6 @@ def _form_edicao(supabase, p, empresa_id):
 
     if salvar:
         try:
-            # CORREÇÃO CRÍTICA: "unidade": unidade (corrigido o erro de digitação anterior que estava 'unidad')
-            # Validação explícita da quantidade para garantir que o número 0.0 entre no Supabase com sucesso.
             db_quantidade = float(quantidade) if quantidade is not None else 0.0
             
             supabase.table("produtos").update({
@@ -276,7 +272,7 @@ def _form_edicao(supabase, p, empresa_id):
                 "quantidade_minima": estoque_min
             }).eq("id", p["id"]).execute()
             
-            st.success("✅ Produto atualizado com sucesso!")
+            st.success("✅ Produto updated com sucesso!")
             st.session_state.pop(f"edit_{p['id']}", None)
             st.rerun()
         except Exception as e:
