@@ -11,10 +11,32 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Ocultar navegação padrão do Streamlit
+# Ocultar navegação padrão do Streamlit e injetar suporte PWA completo
 st.markdown(
-    "<style>[data-testid='stSidebarNav']{display:none !important;} "
-    ".block-container{padding-top:1rem !important;}</style>", 
+    """
+    <style>
+    [data-testid='stSidebarNav']{display:none !important;} 
+    .block-container{padding-top:1rem !important;}
+    </style>
+    <script>
+        // Força o modo 'App' no celular (oculta barras do navegador)
+        var metaApple = document.createElement('meta');
+        metaApple.name = "apple-mobile-web-app-capable";
+        metaApple.content = "yes";
+        document.getElementsByTagName('head')[0].appendChild(metaApple);
+        
+        var metaStatus = document.createElement('meta');
+        metaStatus.name = "apple-mobile-web-app-status-bar-style";
+        metaStatus.content = "black-translucent";
+        document.getElementsByTagName('head')[0].appendChild(metaStatus);
+
+        // Ajusta o zoom para não bugar no celular e previne recarregamentos agressivos
+        var metaView = document.createElement('meta');
+        metaView.name = "viewport";
+        metaView.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
+        document.getElementsByTagName('head')[0].appendChild(metaView);
+    </script>
+    """, 
     unsafe_allow_html=True
 )
 
@@ -218,7 +240,7 @@ elif page == "Fornecedores":
 elif page == "Perdas":
     try:
         from telas.perdas import show_perdas; _load(show_perdas)
-    except: st.info("Módulo de Perdas em desenvolvimento.")
+    except: st.info("Módulo de Perdas em development.")
 elif page == "Usuários":
     if "admin" in user_role or "alex" in session_user:
         from telas.usuarios import show_usuarios; _load(show_usuarios)
