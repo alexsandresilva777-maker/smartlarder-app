@@ -1,0 +1,14 @@
+name: Keep Supabase Alive - SmartLarder
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase SmartLarder
+        run: |
+          curl -s https://pocrrfiunrcshhulqxde.supabase.co/rest/v1/ \
+          -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBvY3JyZml1bnJjc2hodWxxeGRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDc0MjI5NjQsImV4cCI6MjAyMjk5ODk2NH0.pMdVkVaVknPSqaRXFMBuDMGkPwCpQEXTKMCOPHHoGkA"
